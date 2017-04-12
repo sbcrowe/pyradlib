@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-""" Gafchromic film calibration module.
+""" Radiochromic film calibration module.
 
 This module provides dose calibration functionality for radiochromic film.
 """
@@ -7,7 +7,7 @@ This module provides dose calibration functionality for radiochromic film.
 # authorship information
 __author__ = 'Scott Crowe'
 __email__ = 'sb.crowe@gmail.com'
-__credits__ = ['Tanya Kairn']
+__credits__ = ['Tanya Kairn', 'Samuel Peet']
 __license__ = "GPL3"
 
 # import required code
@@ -15,6 +15,9 @@ import numpy as np
 from scipy import optimize
 from numpy.polynomial.polynomial import polyfit
 from numpy.polynomial.polynomial import polyval
+
+# define default parameters
+_default_number_format = '{0:0.2f}'
 
 
 class NonLinearFit:
@@ -53,6 +56,13 @@ class NonLinearFit:
         """Returns dose calculated for provided netOD."""
         return self._non_linear_fitting_function(netod, self.a, self.b, self.c, self.n)
 
+    def description(self):
+        """Returns text describing the calibration fit."""
+        return ('d(x)=' + _default_number_format.format(self.a) + 'x^'
+                + _default_number_format.format(self.n) + ' + '
+                + _default_number_format.format(self.b) + 'x + '
+                + _default_number_format.format(self.c))
+
 
 class PolynomialFit:
     """Performs calibration fit using polynomial fitting function."""
@@ -79,6 +89,14 @@ class PolynomialFit:
     def dose(self, netod):
         """Returns dose corresponding to provided netOD."""
         return polyval(netod, self.coefficients)
+
+    def description(self):
+        """Returns text describing the calibration fit."""
+        text = 'd(x)='
+        for index in np.arange(len(self.coef)):
+            text += (' + ' + _default_number_format.format(self.coef[1])
+                     + 'x^' + str(index+1))
+        return text.replace('x^1','x').replace('x^0','').replace('= +','=')
 
 
 class TamponiFit:
@@ -117,6 +135,10 @@ class TamponiFit:
         # return self.ref_dose * np.log(1+(self.a-1)*eR) / np.log(self.a)
         return self._tamponi_fitting_function(eR, self.a)
 
+    def description(self):
+        """Returns text describing the calibration fit."""
+        return 'a=' + _default_number_format.format(self.a)
+
 
 class LewisFit:
     """Performs calibration fit using Lewis fitting function."""
@@ -147,6 +169,12 @@ class LewisFit:
     def dose(self, response):
         """Returns dose corresponding to provided net response."""
         return self._lewis_fitting_function(response, self.a, self.b, self.c)
+
+    def description(self):
+        """Returns text describing the calibration fit."""
+        return ('d(x)=((' + _default_number_format.format(self.b)
+                + ') / (x+' + _default_number_format.format(self.a)
+                + ')) + ' + _default_number_format.format(self.c))
 
 
 class YaoFit:
@@ -183,3 +211,9 @@ class YaoFit:
     def dose(self, response):
         """Returns dose corresponding to provided response ratio."""
         return self._yao_fitting_function(response, self.h, self.m)
+
+    def description(self):
+        """Returns text describing the calibration fit."""
+        return ('d(x)= ' + _default_number_format.format(self.m)
+                + '(x - 1) / (' + _default_number_format.format(self.h)
+                + ' - x)')
