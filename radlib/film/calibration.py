@@ -13,7 +13,6 @@ __license__ = "GPL3"
 # import required code
 import numpy as np
 from scipy import optimize
-from numpy.polynomial.polynomial import polyfit
 from numpy.polynomial.polynomial import polyval
 
 # define default parameters
@@ -42,19 +41,30 @@ class NonLinearFit:
         self.minimum = np.min(netod_data)
         self.maximum = np.max(netod_data)
         popt, pcov = optimize.curve_fit(self._non_linear_fitting_function,
-                                        netod_data, dose_data, p0=[1, 0, 0, 2])
-        self.a, self.b, self.c, self.n = popt
+                                        netod_data, dose_data, p0=[1, 0, 2])
+        self.a, self.b, self.n = popt
+        perr = np.sqrt(np.diag(pcov))
+        self.a_error, self.b_error, self.n_error = perr
         self.degrees_of_freedom = len(dose_data) - 4
         calculated_dose = self.dose(np.array(netod_data))
         self.rmse = np.sqrt(np.sum((np.array(dose_data) - calculated_dose) ** 2) / self.degrees_of_freedom)
+        self.cvrmse = self.rmse / np.mean(dose_data)
 
-    def _non_linear_fitting_function(x, a, b, c, n):
+    def _non_linear_fitting_function(x, a, b, n):
         """The Devic non-linear fitting function."""
-        return a * x ** n + b * x + c
+        return a * x ** n + b * x
 
     def dose(self, netod):
         """Returns dose calculated for provided netOD."""
-        return self._non_linear_fitting_function(netod, self.a, self.b, self.c, self.n)
+        return self._non_linear_fitting_function(netod, self.a, self.b, self.n)
+
+    def error(self, netod, netod_error):
+        """Returns dose error for provided netOD."""
+        A = netod**self.n * self.a_error
+        B = netod * self.b_error
+        C = self.a * netod**self.n * np.log(self.n) * self.n_error
+        D = (self.a * self.n * netod**(self.n-1) + self.b) * netod_error
+        return np.sqrt(A**2 + B**2 + C**2 + D**2)
 
     def description(self):
         """Returns text describing the calibration fit."""
@@ -70,25 +80,47 @@ class PolynomialFit:
     name = 'Polynomial fit'
     variable = 'netOD'
 
-    def __init__(self, dose_data, netod_data, order):
-        """Instantiates the calibration fit using a polynomial."""
+    def __init__(self, dose_data, netod_data, degree):
+        """Instantiates the calibration fit using a polynomial.
+        
+        Args:
+            dose_data (np.array): The calibration doses delivered.
+            netod_data (np.array): The net optical densities of irradiated film.
+            degree: The degree of the fitting polynomial.
+        """
         # assert pre-conditions
         assert len(dose_data) == len(netod_data), 'Number of dose and netOD data points disagree.'
-        assert len(dose_data) > (order + 1), 'Insufficient number of data points for polynomial fit.'
+        assert len(dose_data) > (degree + 1), 'Insufficient number of data points for polynomial fit.'
         # instantiate class variables
         self.dose_data = dose_data
         self.netod_data = netod_data
         self.minimum = np.min(netod_data)
         self.maximum = np.max(netod_data)
-        self.order = order
-        self.coefficients = polyfit(netod_data, dose_data, order)
-        self.degrees_of_freedom = len(dose_data) - (order + 1)
+        self.degree = degree
+        self.coefficients, covariance_matrix = np.polyfit(netod_data, dose_data, degree, cov=True)
+        self.errors = np.sqrt(np.diag(covariance_matrix))
+        self.degrees_of_freedom = len(dose_data) - (degree + 1)
         calculated_dose = self.dose(np.array(netod_data))
         self.rmse = np.sqrt(np.sum((np.array(dose_data) - calculated_dose) ** 2) / self.degrees_of_freedom)
+        self.cvrmse = self.rmse / np.mean(dose_data)
 
     def dose(self, netod):
         """Returns dose corresponding to provided netOD."""
         return polyval(netod, self.coefficients)
+
+    def error(self, netod, netod_error):
+        """Returns dose error for provided netOD."""
+        sum_square_fitting_parameters = 0
+        multiplier_for_noise = 0
+        for degree_index in np.arange(0, self.degree):
+            power = self.degree - degree_index
+            coeff = self.coefficients[degree_index]
+            error = self.errors[degree_index]
+            sum_square_fitting_parameters += (netod ** power * error) ** 2
+            if (power > 0):
+                multiplier_for_noise += coeff * power * netod**(power - 1)
+        variance_noise = (multiplier_for_noise * netod_error)**2
+        return np.sqrt(sum_square_fitting_parameters + variance_noise)
 
     def description(self):
         """Returns text describing the calibration fit."""
@@ -124,6 +156,7 @@ class TamponiFit:
         calculated_dose = self.dose(np.array(netod_data))
         self.degrees_of_freedom = len(dose_data) - 1
         self.rmse = np.sqrt(np.sum((np.array(dose_data) - calculated_dose) ** 2) / self.degrees_of_freedom)
+        self.cvrmse = self.rmse / np.mean(dose_data)
 
     def _tamponi_fitting_function(R, a):
         """The Tamponi fitting function."""
@@ -161,6 +194,7 @@ class LewisFit:
         calculated_dose = self.dose(np.array(response_data))
         self.degrees_of_freedom = len(dose_data) - 3
         self.rmse = np.sqrt(np.sum((np.array(dose_data) - calculated_dose) ** 2) / self.degrees_of_freedom)
+        self.cvrmse = self.rmse / np.mean(dose_data)
 
     def _lewis_fitting_function(x, a, b, c):
         """The Lewis fitting function."""
@@ -203,6 +237,7 @@ class YaoFit:
         calculated_dose = self.dose(np.array(response_data))
         self.degrees_of_freedom = len(dose_data) - 2
         self.rmse = np.sqrt(np.sum((np.array(dose_data) - calculated_dose) ** 2) / self.degrees_of_freedom)
+        self.cvrmse = self.rmse / np.mean(dose_data)
 
     def _yao_fitting_function(x, a, b):
         """The Yao fitting function."""
