@@ -11,12 +11,34 @@ __credits__ = ['Tanya Kairn', 'Samuel Peet']
 __license__ = "GPL3"
 
 # import required code
+import os
+import matplotlib.pyplot as plt
 import numpy as np
 from scipy import optimize
 from numpy.polynomial.polynomial import polyval
 
 # define default parameters
 _default_number_format = '{0:0.2f}'
+_default_plot_resolution = 1000
+
+def plot_calibration(calibration, filename):
+    """ Plot the calibration as .png file.
+    
+    Args:
+        calibration: The calibration to be plotted.
+        filename: The path of the file to be saved.
+    """
+    os.makedirs(filename, exist_ok=True)
+    fitting_data_x = np.linspace(calibration.minimum, calibration.maximum, _default_plot_resolution)
+    plt.plot(fitting_data_x, calibration.dose(fitting_data_x), 'b-')
+    plt.fill_between(fitting_data_x, calibration.dose(fitting_data_x) + calibration.error(fittin_data_x),
+                     calibration.dose(fitting_data_x) - calibration.error(fittin_data_x), color='blue', alpha='0.5')
+    plt.plot(calibration.netod_data, calibration.dose_data, 'b.')
+    plt.xlabel(calibration.variable)
+    plt.ylabel('Dose (Gy)')
+    plt.title(calibration.name + '; ' + calibration.equation() + '; RMSE = ' + calibration.rmse)
+    plt.savefig(filename)
+    plt.close()
 
 
 class NonLinearFit:
@@ -40,8 +62,7 @@ class NonLinearFit:
         self.netod_data = netod_data
         self.minimum = np.min(netod_data)
         self.maximum = np.max(netod_data)
-        popt, pcov = optimize.curve_fit(self._non_linear_fitting_function,
-                                        netod_data, dose_data, p0=[1, 0, 2])
+        popt, pcov = optimize.curve_fit(self._non_linear_fitting_function, netod_data, dose_data, p0=[1, 0, 2])
         self.a, self.b, self.n = popt
         perr = np.sqrt(np.diag(pcov))
         self.a_error, self.b_error, self.n_error = perr
