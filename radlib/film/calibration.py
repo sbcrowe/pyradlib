@@ -21,6 +21,7 @@ from numpy.polynomial.polynomial import polyval
 _default_number_format = '{0:0.2f}'
 _default_plot_resolution = 1000
 
+
 def plot_calibration(calibration, filename):
     """ Plot the calibration as .png file.
     
@@ -31,8 +32,8 @@ def plot_calibration(calibration, filename):
     os.makedirs(filename, exist_ok=True)
     fitting_data_x = np.linspace(calibration.minimum, calibration.maximum, _default_plot_resolution)
     plt.plot(fitting_data_x, calibration.dose(fitting_data_x), 'b-')
-    plt.fill_between(fitting_data_x, calibration.dose(fitting_data_x) + calibration.error(fittin_data_x),
-                     calibration.dose(fitting_data_x) - calibration.error(fittin_data_x), color='blue', alpha='0.5')
+    plt.fill_between(fitting_data_x, calibration.dose(fitting_data_x) + calibration.error(fitting_data_x),
+                     calibration.dose(fitting_data_x) - calibration.error(fitting_data_x), color='blue', alpha='0.5')
     plt.plot(calibration.netod_data, calibration.dose_data, 'b.')
     plt.xlabel(calibration.variable)
     plt.ylabel('Dose (Gy)')
@@ -53,10 +54,15 @@ class NonLinearFit:
         Args:
             dose_data (np.array): The calibration doses delivered.
             netod_data (np.array): The net optical densities of irradiated film.
+            
+        Raises:
+            ValueError: If number of dose and netOD data points incorrect.
         """
-        # assert pre-conditions
-        assert len(dose_data) == len(netod_data), 'Number of dose and netOD data points disagree.'
-        assert len(dose_data) > 4, 'Insufficient number of data points for non-linear fit.'
+        # pre-conditions
+        if not len(dose_data) == len(netod_data):
+            raise ValueError('Number of dose and netOD data points disagree.')
+        if not len(dose_data) > 4:
+            raise ValueError('Insufficient number of data points for non-linear fit.')
         # instantiate class variables
         self.dose_data = dose_data
         self.netod_data = netod_data
@@ -108,10 +114,15 @@ class PolynomialFit:
             dose_data (np.array): The calibration doses delivered.
             netod_data (np.array): The net optical densities of irradiated film.
             degree: The degree of the fitting polynomial.
+            
+        Raises:
+            ValueError: If number of dose and netOD data points incorrect.
         """
-        # assert pre-conditions
-        assert len(dose_data) == len(netod_data), 'Number of dose and netOD data points disagree.'
-        assert len(dose_data) > (degree + 1), 'Insufficient number of data points for polynomial fit.'
+        # pre-conditions
+        if not len(dose_data) == len(netod_data):
+            raise ValueError('Number of dose and netOD data points disagree.')
+        if not len(dose_data) > degree + 1:
+            raise ValueError('Insufficient number of data points for polynomial fit.')
         # instantiate class variables
         self.dose_data = dose_data
         self.netod_data = netod_data
@@ -159,10 +170,20 @@ class TamponiFit:
     variable = 'netOD'
 
     def __init__(self, dose_data, netod_data):
-        """Instantiates the calibration fit using the Tamponi method."""
-        # assert pre-conditions
-        assert len(dose_data) == len(netod_data), 'Number of dose and netOD data points disagree.'
-        assert len(dose_data) > 1, 'Insufficient number of data points for Tamponi fit.'
+        """Instantiates the calibration fit using the Tamponi method.
+
+        Args:
+            dose_data (np.array): The calibration doses delivered.
+            netod_data (np.array): The net optical densities of irradiated film.
+
+        Raises:
+            ValueError: If number of dose and netOD data points incorrect.
+        """
+        # pre-conditions
+        if not len(dose_data) == len(netod_data):
+            raise ValueError('Number of dose and netOD data points disagree.')
+        if not len(dose_data) > 1:
+            raise ValueError('Insufficient number of data points for Tamponi fit.')
         # instantiate class variables
         self.dose_data = dose_data
         self.netod_data = netod_data
@@ -201,10 +222,20 @@ class LewisFit:
     variable = 'Net response'
 
     def __init__(self, dose_data, response_data):
-        """Instantiates the calibration fit using the Tamponi method."""
-        # assert pre-conditions
-        assert len(dose_data) == len(response_data), 'Number of dose and net response data points disagree.'
-        assert len(dose_data) > 3, 'Insufficient number of data points for Lewis fit.'
+        """Instantiates the calibration fit using the Lewis method.
+        
+        Args:
+            dose_data (np.array): The calibration doses delivered.
+            response_data (np.array): The net response values of irradiated film.
+        
+        Raises:
+            ValueError: If number of dose and net response data points incorrect.
+        """
+        # pre-conditions
+        if not len(dose_data) == len(response_data):
+            raise ValueError('Number of dose and net response data points disagree.')
+        if not len(dose_data) > 3:
+            raise ValueError('Insufficient number of data points for Lewis fit.')
         # instantiate class variables
         self.dose_data = dose_data
         self.response_data = response_data
@@ -243,10 +274,20 @@ class YaoFit:
     variable = 'Net response'
 
     def __init__(self, dose_data, response_data):
-        """Instantiates the calibration fit using the Yao method."""
-        # assert pre-conditions
-        assert len(dose_data) == len(response_data), 'Number of dose and net response data points disagree.'
-        assert len(dose_data) > 2, 'Insufficient number of data points for Yao fit.'
+        """Instantiates the calibration fit using the Yao method.
+        
+        Args:
+            dose_data (np.array): The calibration doses delivered.
+            response_data (np.array): The net response values of irradiated film.
+        
+        Raises:
+            ValueError: If number of dose and net response data points incorrect.
+        """
+        # pre-conditions
+        if not len(dose_data) == len(response_data):
+            raise ValueError('Number of dose and net response data points disagree.')
+        if not len(dose_data) > 2:
+            raise ValueError('Insufficient number of data points for Yao fit.')
         # instantiate class variables
         self.dose_data = dose_data
         self.response_data = response_data
