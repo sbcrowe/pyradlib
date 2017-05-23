@@ -314,3 +314,53 @@ class YaoFit:
         return ('d(x)= ' + _default_number_format.format(self.m)
                 + '(x - 1) / (' + _default_number_format.format(self.h)
                 + ' - x)')
+
+
+class SumSignalFit:
+    """Performs calibration fit using sum signal fitting function."""
+
+    name = 'Sum signal fit'
+    variable = 'Sum signal'
+
+    def __init__(self, dose_data, sum_signal_data):
+        """Instantiates the calibration fit using the Yao method.
+
+        Args:
+            dose_data (np.array): The calibration doses delivered.
+            sum_signal_data (np.array): The sum signal values of irradiated film.
+
+        Raises:
+            ValueError: If number of dose and sum signal data points incorrect.
+        """
+        # pre-conditions
+        if not len(dose_data) == len(response_data):
+            raise ValueError('Number of dose and net response data points disagree.')
+        if not len(dose_data) > 2:
+            raise ValueError('Insufficient number of data points for Yao fit.')
+        # instantiate class variables
+        self.dose_data = dose_data
+        self.sum_signal_data = sum_signal_data
+        self.minimum = np.min(sum_signal_data)
+        self.maximum = np.max(sum_signal_data)
+        popt, pcov = optimize.curve_fit(self._sum_signal_fitting_function, sum_signal_data, dose_data, p0=[1, 1, 1, 1])
+        self.a, self.b, self.c, self.d = popt
+        calculated_dose = self.dose(np.array(sum_signal_data))
+        self.degrees_of_freedom = len(dose_data) - 4
+        self.rmse = np.sqrt(np.sum((np.array(dose_data) - calculated_dose) ** 2) / self.degrees_of_freedom)
+        self.cvrmse = self.rmse / np.mean(dose_data)
+
+    def _sum_signal_fitting_function(x, a, b, c, d):
+        """The sum signal double exponential fitting function."""
+        return (a * np.exp(b * x) + c * np.exp(d * x))
+
+    def dose(self, sum_signal):
+        """Returns dose corresponding to provided sum signal."""
+        return self._sum_signal_fitting_function(sum_signal, self.a, self.b, self.c, self.d)
+
+    def description(self):
+        """Returns text describing the calibration fit."""
+        return ('d(x)= ' + _default_number_format.format(self.a)
+                + ' exp(' + _default_number_format.format(self.b)
+                + 'x) + ' + _default_number_format.format(self.c)
+                + ' exp(' + _default_number_format.format(self.d)
+                + 'x)')
