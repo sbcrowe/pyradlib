@@ -8,7 +8,7 @@ This module provides dose calibration functionality for radiochromic film.
 __author__ = 'Scott Crowe'
 __email__ = 'sb.crowe@gmail.com'
 __credits__ = ['Tanya Kairn', 'Samuel Peet']
-__license__ = "GPL3"
+__license__ = 'GPL3'
 
 # import required code
 import os
@@ -72,10 +72,12 @@ class NonLinearFit:
         self.a, self.b, self.n = popt
         perr = np.sqrt(np.diag(pcov))
         self.a_error, self.b_error, self.n_error = perr
-        self.degrees_of_freedom = len(dose_data) - 4
+        self.fit_parameters = 4
+        self.degrees_of_freedom = len(dose_data) - self.fit_parameters
         calculated_dose = self.dose(np.array(netod_data))
         self.rmse = np.sqrt(np.sum((np.array(dose_data) - calculated_dose) ** 2) / self.degrees_of_freedom)
         self.cvrmse = self.rmse / np.mean(dose_data)
+        self.average_error = np.sum(abs(np.array(dose_data) - calculated_dose) / np.array(dose_data)) / len(dose_data)
 
     def _non_linear_fitting_function(x, a, b, n):
         """The Devic non-linear fitting function."""
@@ -87,11 +89,17 @@ class NonLinearFit:
 
     def error(self, netod, netod_error):
         """Returns dose error for provided netOD."""
-        A = netod**self.n * self.a_error
+        A = netod ** self.n * self.a_error
         B = netod * self.b_error
-        C = self.a * netod**self.n * np.log(self.n) * self.n_error
-        D = (self.a * self.n * netod**(self.n-1) + self.b) * netod_error
-        return np.sqrt(A**2 + B**2 + C**2 + D**2)
+        C = self.a * netod ** self.n * np.log(self.n) * self.n_error
+        D = (self.a * self.n * netod ** (self.n - 1) + self.b) * netod_error
+        return np.sqrt(A ** 2 + B ** 2 + C ** 2 + D ** 2)
+
+    def akaike_information_criterion(self, effective_uncertainty):
+        """Returns Akaike information criteria."""
+        return (2 * self.fit_parameters) + np.sum((np.array(self.dose_data) - self.calculated_dose) ** 2) / (
+            self.degrees_of_freedom * effective_uncertainty ** 2) + (
+            2 * self.fit_parameters * (self.fit_parameters + 1) / (self.degrees_of_freedom - 1))
 
     def description(self):
         """Returns text describing the calibration fit."""
@@ -131,10 +139,12 @@ class PolynomialFit:
         self.degree = degree
         self.coefficients, covariance_matrix = np.polyfit(netod_data, dose_data, degree, cov=True)
         self.errors = np.sqrt(np.diag(covariance_matrix))
-        self.degrees_of_freedom = len(dose_data) - (degree + 1)
+        self.fit_parameters = self.degree + 1
+        self.degrees_of_freedom = len(dose_data) - self.fit_parameters
         calculated_dose = self.dose(np.array(netod_data))
         self.rmse = np.sqrt(np.sum((np.array(dose_data) - calculated_dose) ** 2) / self.degrees_of_freedom)
         self.cvrmse = self.rmse / np.mean(dose_data)
+        self.average_error = np.sum(abs(np.array(dose_data) - calculated_dose) / np.array(dose_data)) / len(dose_data)
 
     def dose(self, netod):
         """Returns dose corresponding to provided netOD."""
@@ -150,17 +160,23 @@ class PolynomialFit:
             error = self.errors[degree_index]
             sum_square_fitting_parameters += (netod ** power * error) ** 2
             if (power > 0):
-                multiplier_for_noise += coeff * power * netod**(power - 1)
-        variance_noise = (multiplier_for_noise * netod_error)**2
+                multiplier_for_noise += coeff * power * netod ** (power - 1)
+        variance_noise = (multiplier_for_noise * netod_error) ** 2
         return np.sqrt(sum_square_fitting_parameters + variance_noise)
+
+    def akaike_information_criterion(self, effective_uncertainty):
+        """Returns Akaike information criteria."""
+        return (2 * self.fit_parameters) + np.sum((np.array(self.dose_data) - self.calculated_dose) ** 2) / (
+            self.degrees_of_freedom * effective_uncertainty ** 2) + (
+            2 * self.fit_parameters * (self.fit_parameters + 1) / (self.degrees_of_freedom - 1))
 
     def description(self):
         """Returns text describing the calibration fit."""
         text = 'd(x)='
         for index in np.arange(len(self.coef)):
             text += (' + ' + _default_number_format.format(self.coef[1])
-                     + 'x^' + str(index+1))
-        return text.replace('x^1','x').replace('x^0','').replace('= +','=')
+                     + 'x^' + str(index + 1))
+        return text.replace('x^1', 'x').replace('x^0', '').replace('= +', '=')
 
 
 class TamponiFit:
@@ -195,10 +211,12 @@ class TamponiFit:
         eR = np.array(netod_data) / self.ref_netod
         popt, pcov = optimize.curve_fit(self._tamponi_fitting_function, eR, R, p0=[0.5])
         self.a = popt[0]
-        calculated_dose = self.dose(np.array(netod_data))
-        self.degrees_of_freedom = len(dose_data) - 1
+        self.calculated_dose = self.dose(np.array(netod_data))
+        self.fit_parameters = 1
+        self.degrees_of_freedom = len(dose_data) - self.fit_parameters
         self.rmse = np.sqrt(np.sum((np.array(dose_data) - calculated_dose) ** 2) / self.degrees_of_freedom)
         self.cvrmse = self.rmse / np.mean(dose_data)
+        self.average_error = np.sum(abs(np.array(dose_data) - calculated_dose) / np.array(dose_data)) / len(dose_data)
 
     def _tamponi_fitting_function(R, a):
         """The Tamponi fitting function."""
@@ -209,6 +227,12 @@ class TamponiFit:
         eR = netod / self.ref_netod
         # return self.ref_dose * np.log(1+(self.a-1)*eR) / np.log(self.a)
         return self._tamponi_fitting_function(eR, self.a)
+
+    def akaike_information_criterion(self, effective_uncertainty):
+        """Returns Akaike information criteria."""
+        return (2 * self.fit_parameters) + np.sum((np.array(self.dose_data) - self.calculated_dose) ** 2) / (
+            self.degrees_of_freedom * effective_uncertainty ** 2) + (
+            2 * self.fit_parameters * (self.fit_parameters + 1) / (self.degrees_of_freedom - 1))
 
     def description(self):
         """Returns text describing the calibration fit."""
@@ -243,10 +267,12 @@ class LewisFit:
         self.maximum = np.max(response_data)
         popt, pcov = optimize.curve_fit(self._lewis_fitting_function, response_data, dose_data, p0=[0, 1, 0])
         self.a, self.b, self.c = popt
-        calculated_dose = self.dose(np.array(response_data))
-        self.degrees_of_freedom = len(dose_data) - 3
+        self.calculated_dose = self.dose(np.array(response_data))
+        self.fit_parameters = 3
+        self.degrees_of_freedom = len(dose_data) - self.fit_parameters
         self.rmse = np.sqrt(np.sum((np.array(dose_data) - calculated_dose) ** 2) / self.degrees_of_freedom)
         self.cvrmse = self.rmse / np.mean(dose_data)
+        self.average_error = np.sum(abs(np.array(dose_data) - calculated_dose) / np.array(dose_data)) / len(dose_data)
 
     def _lewis_fitting_function(x, a, b, c):
         """The Lewis fitting function."""
@@ -255,6 +281,12 @@ class LewisFit:
     def dose(self, response):
         """Returns dose corresponding to provided net response."""
         return self._lewis_fitting_function(response, self.a, self.b, self.c)
+
+    def akaike_information_criterion(self, effective_uncertainty):
+        """Returns Akaike information criteria."""
+        return (2 * self.fit_parameters) + np.sum((np.array(self.dose_data) - self.calculated_dose) ** 2) / (
+            self.degrees_of_freedom * effective_uncertainty ** 2) + (
+            2 * self.fit_parameters * (self.fit_parameters + 1) / (self.degrees_of_freedom - 1))
 
     def description(self):
         """Returns text describing the calibration fit."""
@@ -296,10 +328,12 @@ class YaoFit:
         median_dose = np.median(dose_data)
         popt, pcov = optimize.curve_fit(self._yao_fitting_function, response_data, dose_data, p0=[0.19, median_dose])
         self.h, self.m = popt
-        calculated_dose = self.dose(np.array(response_data))
-        self.degrees_of_freedom = len(dose_data) - 2
+        self.calculated_dose = self.dose(np.array(response_data))
+        self.fit_parameters = 2
+        self.degrees_of_freedom = len(dose_data) - self.fit_parameters
         self.rmse = np.sqrt(np.sum((np.array(dose_data) - calculated_dose) ** 2) / self.degrees_of_freedom)
         self.cvrmse = self.rmse / np.mean(dose_data)
+        self.average_error = np.sum(abs(np.array(dose_data) - calculated_dose) / np.array(dose_data)) / len(dose_data)
 
     def _yao_fitting_function(x, a, b):
         """The Yao fitting function."""
@@ -308,6 +342,12 @@ class YaoFit:
     def dose(self, response):
         """Returns dose corresponding to provided response ratio."""
         return self._yao_fitting_function(response, self.h, self.m)
+
+    def akaike_information_criterion(self, effective_uncertainty):
+        """Returns Akaike information criteria."""
+        return (2 * self.fit_parameters) + np.sum((np.array(self.dose_data) - self.calculated_dose) ** 2) / (
+            self.degrees_of_freedom * effective_uncertainty ** 2) + (
+            2 * self.fit_parameters * (self.fit_parameters + 1) / (self.degrees_of_freedom - 1))
 
     def description(self):
         """Returns text describing the calibration fit."""
@@ -334,9 +374,9 @@ class SumSignalFit:
         """
         # pre-conditions
         if not len(dose_data) == len(response_data):
-            raise ValueError('Number of dose and net response data points disagree.')
-        if not len(dose_data) > 2:
-            raise ValueError('Insufficient number of data points for Yao fit.')
+            raise ValueError('Number of dose and sum signal data points disagree.')
+        if not len(dose_data) > 4:
+            raise ValueError('Insufficient number of data points for Sum Signal fit.')
         # instantiate class variables
         self.dose_data = dose_data
         self.sum_signal_data = sum_signal_data
@@ -344,18 +384,26 @@ class SumSignalFit:
         self.maximum = np.max(sum_signal_data)
         popt, pcov = optimize.curve_fit(self._sum_signal_fitting_function, sum_signal_data, dose_data, p0=[1, 1, 1, 1])
         self.a, self.b, self.c, self.d = popt
-        calculated_dose = self.dose(np.array(sum_signal_data))
-        self.degrees_of_freedom = len(dose_data) - 4
+        self.calculated_dose = self.dose(np.array(sum_signal_data))
+        self.fit_parameters = 4
+        self.degrees_of_freedom = len(dose_data) - self.fit_parameters
         self.rmse = np.sqrt(np.sum((np.array(dose_data) - calculated_dose) ** 2) / self.degrees_of_freedom)
         self.cvrmse = self.rmse / np.mean(dose_data)
+        self.average_error = np.sum(abs(np.array(dose_data) - calculated_dose) / np.array(dose_data)) / len(dose_data)
 
     def _sum_signal_fitting_function(x, a, b, c, d):
         """The sum signal double exponential fitting function."""
-        return (a * np.exp(b * x) + c * np.exp(d * x))
+        return a * np.exp(b * x) + c * np.exp(d * x)
 
     def dose(self, sum_signal):
         """Returns dose corresponding to provided sum signal."""
         return self._sum_signal_fitting_function(sum_signal, self.a, self.b, self.c, self.d)
+
+    def akaike_information_criterion(self, effective_uncertainty):
+        """Returns Akaike information criteria."""
+        return (2 * self.fit_parameters) + np.sum((np.array(self.dose_data) - self.calculated_dose) ** 2) / (
+            self.degrees_of_freedom * effective_uncertainty ** 2) + (
+            2 * self.fit_parameters * (self.fit_parameters + 1) / (self.degrees_of_freedom - 1))
 
     def description(self):
         """Returns text describing the calibration fit."""
