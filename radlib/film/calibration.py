@@ -79,6 +79,7 @@ class NonLinearFit:
         self.cvrmse = self.rmse / np.mean(dose_data)
         self.average_error = np.sum(abs(np.array(dose_data) - calculated_dose) / np.array(dose_data)) / len(dose_data)
 
+    @staticmethod
     def _non_linear_fitting_function(x, a, b, n):
         """The Devic non-linear fitting function."""
         return a * x ** n + b * x
@@ -173,8 +174,8 @@ class PolynomialFit:
     def description(self):
         """Returns text describing the calibration fit."""
         text = 'd(x)='
-        for index in np.arange(len(self.coef)):
-            text += (' + ' + _default_number_format.format(self.coef[1])
+        for index in np.arange(len(self.coefficients)):
+            text += (' + ' + _default_number_format.format(self.coefficients[1])
                      + 'x^' + str(index + 1))
         return text.replace('x^1', 'x').replace('x^0', '').replace('= +', '=')
 
@@ -218,6 +219,7 @@ class TamponiFit:
         self.cvrmse = self.rmse / np.mean(dose_data)
         self.average_error = np.sum(abs(np.array(dose_data) - calculated_dose) / np.array(dose_data)) / len(dose_data)
 
+    @staticmethod
     def _tamponi_fitting_function(R, a):
         """The Tamponi fitting function."""
         return np.log10(1 + (a - 1) * R) / np.log10(a)
@@ -274,6 +276,7 @@ class LewisFit:
         self.cvrmse = self.rmse / np.mean(dose_data)
         self.average_error = np.sum(abs(np.array(dose_data) - calculated_dose) / np.array(dose_data)) / len(dose_data)
 
+    @staticmethod
     def _lewis_fitting_function(x, a, b, c):
         """The Lewis fitting function."""
         return ((b) / (x + a)) + c
@@ -335,6 +338,7 @@ class YaoFit:
         self.cvrmse = self.rmse / np.mean(dose_data)
         self.average_error = np.sum(abs(np.array(dose_data) - calculated_dose) / np.array(dose_data)) / len(dose_data)
 
+    @staticmethod
     def _yao_fitting_function(x, a, b):
         """The Yao fitting function."""
         return (b * (x - 1) / (a - x))
@@ -391,6 +395,7 @@ class SumSignalFit:
         self.cvrmse = self.rmse / np.mean(dose_data)
         self.average_error = np.sum(abs(np.array(dose_data) - calculated_dose) / np.array(dose_data)) / len(dose_data)
 
+    @staticmethod
     def _sum_signal_fitting_function(x, a, b, c, d):
         """The sum signal double exponential fitting function."""
         return a * np.exp(b * x) + c * np.exp(d * x)
