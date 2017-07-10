@@ -12,6 +12,7 @@ __license__ = "GPL3"
 
 # import required code
 import dicom
+import pandas as pd
 import numpy as np
 from PIL import Image
 from scipy.integrate import simps
@@ -21,6 +22,52 @@ _default_integration_limit = 1
 _default_integration_epsilon = 0.05
 _default_identifies = ['name', 'mu']
 _default_metrics = ['MCS']
+
+
+def plan_complexity(plan, metrics):
+    """ Calculate the complexity of a treatment beam.
+
+    Args:
+        plan (Dataset): The radiotherapy treatment plan.
+        metrics (list): List of metrics to calculate.
+    """
+    ref_beam_numbers = []
+    ref_beam_monitor_units = []
+    ref_beam_dose = []
+    for fraction_group in plan.FractionGroups:
+        for ref_beam in fraction_group.ReferencedBeams:
+            ref_beam_numbers.append(ref_beam.ReferencedBeamNumber)
+            ref_beam_monitor_units.append(ref_beam.BeamMeterset)
+            ref_beam_dose.append(ref_beam.BeamDose)
+    columns = ['Name', 'MU', 'Dose']
+    columns.extend(metrics)
+    data_frame = pd.DataFrame(index=ref_beam_numbers, columns=columns)
+    for beam in plan.Beams:
+        beamNumber = beam.BeamNumber
+        if beamNumber in data_frame.index:
+            result = [beam.BeamName,
+                      ref_beam_monitor_units[ref_beam_numbers.index(beamNumber)],
+                      ref_beam_dose[ref_beam_numbers.index(beamNumber)]]
+            result.extend(beam_complexity(beam, metrics))
+            data_frame.loc[beamNumber] = result
+    return data_frame
+
+
+def beam_complexity(beam, metrics):
+    """ Calculate the complexity of a treatment beam.
+
+    Args:
+        beam (Dataset): The beam for the complexity metrics to be calculated.
+        metrics (list): List of metrics to calculate.
+    """
+    result = []
+    for metric in metrics:
+        if metric in _default_metrics:
+            result.append(_metric_list[metric](beam))
+        elif 'SAS' in metric:
+            aperture = float(metric.replace('SAS',''))
+            result.append(small_aperture_score(beam, aperture))
+    return result
 
 
 def aperture_area_variability(beam):
@@ -225,7 +272,7 @@ def _control_point_leaf_sequence_variability(leaf_positions, orthogonal_jaw_posi
 
      Args:
          control_point (Dataset): The control point containing leaf position data.
-         leaf_boundaries (ndarray): The edge positions of leaf pairs, orthogonal to motion.
+         leaf_boundaries (np.array): The edge positions of leaf pairs, orthogonal to motion.
      """
     leaf_pairs = int(len(leaf_positions) / 2)
     exposed_open_leaf_pairs = 0
@@ -306,9 +353,9 @@ def _control_point_small_aperture_score(leaf_positions, orthogonal_jaw_positions
     """ Return the number of open leaf pair separations less than specified aperture threshold.
 
     Args:
-        leaf_positions (ndarray): The leaf positions for the control point.
-        orthogonal_jaw_positions (ndarray): The positions of the orthogonal jaws.
-        leaf_boundaries (ndarray): The edge positions of leaf pairs, orthogonal to motion.
+        leaf_positions (np.aarray): The leaf positions for the control point.
+        orthogonal_jaw_positions (np.aarray): The positions of the orthogonal jaws.
+        leaf_boundaries (np.aarray): The edge positions of leaf pairs, orthogonal to motion.
         aperture (float): The threshold defining a small aperture.
     """
     leaf_pairs = int(len(leaf_positions) / 2)
@@ -421,7 +468,6 @@ def _weighted_metric(beam, metric):
 _metric_list = {'AAV': aperture_area_variability,
                 'CLS': closed_leaf_score,
                 'CAS': cross_axis_score,
-                'FMC': fluence_map_complexity,
                 'LSV': leaf_sequence_variability,
                 'MAD': mean_asymmetry_distance,
                 'MCS': modulation_complexity_score}
