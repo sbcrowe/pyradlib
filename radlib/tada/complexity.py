@@ -11,7 +11,7 @@ __credits__ = ['Tanya Kairn']
 __license__ = "GPL3"
 
 # import required code
-import dicom
+import pydicom
 import pandas as pd
 import numpy as np
 from PIL import Image
@@ -34,15 +34,15 @@ def plan_complexity(plan, metrics):
     ref_beam_numbers = []
     ref_beam_monitor_units = []
     ref_beam_dose = []
-    for fraction_group in plan.FractionGroups:
-        for ref_beam in fraction_group.ReferencedBeams:
+    for fraction_group in plan.FractionGroupSequence:
+        for ref_beam in fraction_group.ReferencedBeamSequence:
             ref_beam_numbers.append(ref_beam.ReferencedBeamNumber)
             ref_beam_monitor_units.append(ref_beam.BeamMeterset)
             ref_beam_dose.append(ref_beam.BeamDose)
     columns = ['Name', 'MU', 'Dose']
     columns.extend(metrics)
     data_frame = pd.DataFrame(index=ref_beam_numbers, columns=columns)
-    for beam in plan.Beams:
+    for beam in plan.BeamSequence:
         beamNumber = beam.BeamNumber
         if beamNumber in data_frame.index:
             result = [beam.BeamName,
@@ -419,7 +419,7 @@ def _maximum_leaf_separations(beam):
         beam (Dataset): The beam containing control points with leaf positions.
     """
     # pre-conditions
-    if not isinstance(beam, dicom.dataset.Dataset):
+    if not isinstance(beam, pydicom.dataset.Dataset):
         raise TypeError('Beam is not valid type.')
     if not _has_multi_leaf_collimator(beam):
         raise ValueError('Beam has no multi-leaf collimator.')
