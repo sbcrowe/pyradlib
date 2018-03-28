@@ -407,7 +407,7 @@ class SumSignalFit(Fit):
             ValueError: If number of dose and sum signal data points incorrect.
         """
         # pre-conditions
-        if not len(dose_data) == len(response_data):
+        if not len(dose_data) == len(sum_signal_data):
             raise ValueError('Number of dose and sum signal data points disagree.')
         if not len(dose_data) > 4:
             raise ValueError('Insufficient number of data points for Sum Signal fit.')
