@@ -14,8 +14,6 @@ __license__ = "GPL3"
 import pydicom
 import pandas as pd
 import numpy as np
-from PIL import Image
-from scipy.integrate import simps
 
 # define default parameters
 _default_integration_limit = 1
@@ -24,13 +22,17 @@ _default_identifies = ['name', 'mu']
 _default_metrics = ['MCS']
 
 
-def plan_complexity(plan, metrics):
+def plan_complexity(plan: pydicom.dataset.Dataset, metrics=_default_metrics):
     """ Calculate the complexity of a treatment beam.
 
     Args:
         plan (Dataset): The radiotherapy treatment plan.
         metrics (list): List of metrics to calculate.
     """
+    # pre conditions
+    for metric in metrics:
+        if not _is_valid_metric(metric):
+            raise ValueError(metric + ' is not a valid complexity metric.')
     ref_beam_numbers = []
     ref_beam_monitor_units = []
     ref_beam_dose = []
@@ -46,31 +48,36 @@ def plan_complexity(plan, metrics):
         beamNumber = beam.BeamNumber
         if beamNumber in data_frame.index:
             result = [beam.BeamName,
-                      ref_beam_monitor_units[ref_beam_numbers.index(beamNumber)],
+                      ref_beam_monitor_units[ref_beam_numbers.index(
+                          beamNumber)],
                       ref_beam_dose[ref_beam_numbers.index(beamNumber)]]
             result.extend(beam_complexity(beam, metrics))
             data_frame.loc[beamNumber] = result
     return data_frame
 
 
-def beam_complexity(beam, metrics):
+def beam_complexity(beam: pydicom.dataset.Dataset, metrics=_default_metrics):
     """ Calculate the complexity of a treatment beam.
 
     Args:
         beam (Dataset): The beam for the complexity metrics to be calculated.
         metrics (list): List of metrics to calculate.
     """
+    # pre-condition
+    for metric in metrics:
+        if not _is_valid_metric(metric):
+            raise ValueError(metric + ' is not a valid complexity metric.')
     result = []
     for metric in metrics:
-        if metric in _default_metrics:
+        if metric in _metric_list:
             result.append(_metric_list[metric](beam))
-        elif 'SAS' in metric:
-            aperture = float(metric.replace('SAS',''))
+        elif metric.startswith('SAS'):
+            aperture = float(metric.replace('SAS', ''))
             result.append(small_aperture_score(beam, aperture))
     return result
 
 
-def aperture_area_variability(beam):
+def aperture_area_variability(beam: pydicom.dataset.Dataset):
     """ Calculate the aperture area variability of a treatment beam.
 
     Args:
@@ -83,12 +90,14 @@ def aperture_area_variability(beam):
     orthogonal_jaw_positions = []
     leaf_boundaries = _leaf_position_boundaries(beam)
     maximum_leaf_separation = _maximum_leaf_separations(beam)
-    for control_point in beam.ControlPoints:
+    for control_point in beam.ControlPointSequence:
         differential_weight = (control_point.CumulativeMetersetWeight - previous_cumulative_weight) / \
-                              total_cumulative_weight
+            total_cumulative_weight
         previous_cumulative_weight = control_point.CumulativeMetersetWeight
-        control_point_leaf_positions = _control_point_leaf_positions(control_point)
-        control_point_orthogonal_jaw_positions = _control_point_orthogonal_jaw_positions(control_point)
+        control_point_leaf_positions = _control_point_leaf_positions(
+            control_point)
+        control_point_orthogonal_jaw_positions = _control_point_orthogonal_jaw_positions(
+            control_point)
         if control_point_leaf_positions is not None:
             leaf_positions = control_point_leaf_positions
         if control_point_orthogonal_jaw_positions is not None:
@@ -96,11 +105,11 @@ def aperture_area_variability(beam):
         if differential_weight > 0:
             result += _control_point_aperture_area_variability(leaf_positions, orthogonal_jaw_positions,
                                                                leaf_boundaries, maximum_leaf_separation) * \
-                      differential_weight
+                differential_weight
     return result
 
 
-def closed_leaf_score(beam):
+def closed_leaf_score(beam: pydicom.dataset.Dataset):
     """ Calculate the closed leaf scores of a treatment beam.
 
     Args:
@@ -109,7 +118,7 @@ def closed_leaf_score(beam):
     return _weighted_metric(beam, 'CLS')
 
 
-def cross_axis_score(beam):
+def cross_axis_score(beam: pydicom.dataset.Dataset):
     """ Calculate the cross axis scores of a treatment beam.
 
     Args:
@@ -118,7 +127,7 @@ def cross_axis_score(beam):
     return _weighted_metric(beam, 'CAS')
 
 
-def leaf_sequence_variability(beam):
+def leaf_sequence_variability(beam: pydicom.dataset.Dataset):
     """ Calculate the leaf sequence variability of a treatment beam.
 
         Args:
@@ -127,7 +136,7 @@ def leaf_sequence_variability(beam):
     return _weighted_metric(beam, 'LSV')
 
 
-def mean_asymmetry_distance(beam):
+def mean_asymmetry_distance(beam: pydicom.dataset.Dataset):
     """ Calculate the mean asymmetry distance of a treatment beam.
 
     Args:
@@ -136,7 +145,7 @@ def mean_asymmetry_distance(beam):
     return _weighted_metric(beam, 'MAD')
 
 
-def modulation_complexity_score(beam):
+def modulation_complexity_score(beam: pydicom.dataset.Dataset):
     """ Calculate the modulation complexity score of a treatment beam.
 
     Args:
@@ -149,12 +158,14 @@ def modulation_complexity_score(beam):
     leaf_positions = []
     orthogonal_jaw_positions = []
     leaf_position_boundaries = _leaf_position_boundaries(beam)
-    for control_point in beam.ControlPoints:
+    for control_point in beam.ControlPointSequence:
         differential_weight = (control_point.CumulativeMetersetWeight - previous_cumulative_weight) / \
-                              total_cumulative_weight
+            total_cumulative_weight
         previous_cumulative_weight = control_point.CumulativeMetersetWeight
-        control_point_leaf_positions = _control_point_leaf_positions(control_point)
-        control_point_orthogonal_jaw_positions = _control_point_orthogonal_jaw_positions(control_point)
+        control_point_leaf_positions = _control_point_leaf_positions(
+            control_point)
+        control_point_orthogonal_jaw_positions = _control_point_orthogonal_jaw_positions(
+            control_point)
         if control_point_leaf_positions is not None:
             leaf_positions = control_point_leaf_positions
         if control_point_orthogonal_jaw_positions is not None:
@@ -169,7 +180,7 @@ def modulation_complexity_score(beam):
     return result
 
 
-def small_aperture_score(beam, aperture=10):
+def small_aperture_score(beam: pydicom.dataset.Dataset, aperture: float = 10):
     """ Calculate the small aperture scores of a treatment beam.
 
     Args:
@@ -182,12 +193,14 @@ def small_aperture_score(beam, aperture=10):
     orthogonal_jaw_positions = []
     leaf_boundaries = _leaf_position_boundaries(beam)
     total_cumulative_weight = beam.FinalCumulativeMetersetWeight
-    for control_point in beam.ControlPoints:
+    for control_point in beam.ControlPointSequence:
         differential_weight = (control_point.CumulativeMetersetWeight - previous_cumulative_weight) / \
-                              total_cumulative_weight
+            total_cumulative_weight
         previous_cumulative_weight = control_point.CumulativeMetersetWeight
-        control_point_leaf_positions = _control_point_leaf_positions(control_point)
-        control_point_orthogonal_jaw_positions = _control_point_orthogonal_jaw_positions(control_point)
+        control_point_leaf_positions = _control_point_leaf_positions(
+            control_point)
+        control_point_orthogonal_jaw_positions = _control_point_orthogonal_jaw_positions(
+            control_point)
         if control_point_leaf_positions is not None:
             leaf_positions = control_point_leaf_positions
         if control_point_orthogonal_jaw_positions is not None:
@@ -207,7 +220,8 @@ def _control_point_aperture_area_variability(leaf_positions, orthogonal_jaw_posi
     for leaf_index in range(leaf_pairs):
         if leaf_boundaries[leaf_index + 1] >= orthogonal_jaw_positions[0] \
                 and leaf_boundaries[leaf_index] <= orthogonal_jaw_positions[1]:
-            total_leaf_pair_separation += leaf_positions[leaf_index + leaf_pairs] - leaf_positions[leaf_index]
+            total_leaf_pair_separation += leaf_positions[leaf_index +
+                                                         leaf_pairs] - leaf_positions[leaf_index]
     if total_maximum_leaf_pair_separation > 0:
         return total_leaf_pair_separation / total_maximum_leaf_pair_separation
     return 0
@@ -244,25 +258,26 @@ def _control_point_cross_axis_score(leaf_positions, orthogonal_jaw_positions, le
     return 0
 
 
-def _control_point_jaw_positions(control_point, jaw_axis='X'):
+def _control_point_jaw_positions(control_point: pydicom.dataset.Dataset, jaw_axis: str = 'X'):
     """ Return the jaw positions for specified control point, for the corresponding jaw.
 
     Args:
-        control_point (Dataset): The control point containing leaf position data.
+        control_point (Dataset): The control point containing jaw position data.
+        jaw_axis (str): The jaw for which to look up positions.
     """
-    for beam_limiting_device_position in control_point.BeamLimitingDevicePositions:
+    for beam_limiting_device_position in control_point.BeamLimitingDevicePositionSequence:
         if 'MLC' not in beam_limiting_device_position.RTBeamLimitingDeviceType:
             if jaw_axis in beam_limiting_device_position.RTBeamLimitingDeviceType:
                 return beam_limiting_device_position.LeafJawPositions
 
 
-def _control_point_leaf_positions(control_point):
+def _control_point_leaf_positions(control_point: pydicom.dataset.Dataset):
     """ Return the leaf positions for specified control point.
 
     Args:
         control_point (Dataset): The control point containing leaf position data.
     """
-    for beam_limiting_device_position in control_point.BeamLimitingDevicePositions:
+    for beam_limiting_device_position in control_point.BeamLimitingDevicePositionSequence:
         if 'MLC' in beam_limiting_device_position.RTBeamLimitingDeviceType:
             return beam_limiting_device_position.LeafJawPositions
 
@@ -284,12 +299,15 @@ def _control_point_leaf_sequence_variability(leaf_positions, orthogonal_jaw_posi
         if leaf_boundaries[leaf_index + 1] >= orthogonal_jaw_positions[0] \
                 and leaf_boundaries[leaf_index] <= orthogonal_jaw_positions[1]:
             # note that paper is not clear on whether leaf pair must be open
-            leaf_gap = leaf_positions[leaf_index + leaf_pairs] - leaf_positions[leaf_index]
+            leaf_gap = leaf_positions[leaf_index +
+                                      leaf_pairs] - leaf_positions[leaf_index]
             if leaf_gap > 0:
                 exposed_open_leaf_pairs += 1
                 leaf_positions_left.append(leaf_positions[leaf_index])
-                leaf_positions_right.append(leaf_positions[leaf_index + leaf_pairs])
-                delta_left.append(leaf_positions[leaf_index] - leaf_positions[leaf_index + 1])
+                leaf_positions_right.append(
+                    leaf_positions[leaf_index + leaf_pairs])
+                delta_left.append(
+                    leaf_positions[leaf_index] - leaf_positions[leaf_index + 1])
                 delta_right.append(leaf_positions[leaf_index + leaf_pairs] -
                                    leaf_positions[leaf_index + leaf_pairs + 1])
     min_max_left = max(leaf_positions_left) - min(leaf_positions_left)
@@ -313,8 +331,10 @@ def _control_point_mean_asymmetry_distance(leaf_positions, orthogonal_jaw_positi
     for leaf_index in range(leaf_pairs):
         if leaf_boundaries[leaf_index + 1] >= orthogonal_jaw_positions[0] \
                 and leaf_boundaries[leaf_index] <= orthogonal_jaw_positions[1]:
-            leaf_gap = leaf_positions[leaf_index + leaf_pairs] - leaf_positions[leaf_index]
-            leaf_sum = leaf_positions[leaf_index + leaf_pairs] + leaf_positions[leaf_index]
+            leaf_gap = leaf_positions[leaf_index +
+                                      leaf_pairs] - leaf_positions[leaf_index]
+            leaf_sum = leaf_positions[leaf_index +
+                                      leaf_pairs] + leaf_positions[leaf_index]
             if leaf_gap > 0:
                 exposed_open_leaf_pairs += 1
                 total_asymmetry_distance += abs(leaf_sum / 2)
@@ -330,9 +350,10 @@ def _control_point_orthogonal_jaw_positions(control_point):
         control_point (Dataset): The control point containing leaf position data.
     """
     orthogonal = {'X': 'Y', 'Y': 'X'}
-    for beam_limiting_device_position in control_point.BeamLimitingDevicePositions:
+    for beam_limiting_device_position in control_point.BeamLimitingDevicePositionSequence:
         if 'MLC' in beam_limiting_device_position.RTBeamLimitingDeviceType:
-            mlc_type = beam_limiting_device_position.RTBeamLimitingDeviceType.replace('MLC', '')
+            mlc_type = beam_limiting_device_position.RTBeamLimitingDeviceType.replace(
+                'MLC', '')
             return _control_point_jaw_positions(control_point, orthogonal[mlc_type])
 
 
@@ -343,9 +364,10 @@ def _control_point_running_jaw_positions(control_point):
         control_point (Dataset): The control point containing leaf position data.
     """
     running = {'X': 'X', 'Y': 'Y'}
-    for beam_limiting_device_position in control_point.BeamLimitingDevicePositions:
+    for beam_limiting_device_position in control_point.BeamLimitingDevicePositionSequence:
         if 'MLC' in beam_limiting_device_position.RTBeamLimitingDeviceType:
-            mlc_type = beam_limiting_device_position.RTBeamLimitingDeviceType.replace('MLC', '')
+            mlc_type = beam_limiting_device_position.RTBeamLimitingDeviceType.replace(
+                'MLC', '')
             return _control_point_jaw_positions(control_point, running[mlc_type])
 
 
@@ -364,7 +386,8 @@ def _control_point_small_aperture_score(leaf_positions, orthogonal_jaw_positions
     for leaf_index in range(leaf_pairs):
         if leaf_boundaries[leaf_index + 1] >= orthogonal_jaw_positions[0] \
                 and leaf_boundaries[leaf_index] <= orthogonal_jaw_positions[1]:
-            leaf_gap = leaf_positions[leaf_index + leaf_pairs] - leaf_positions[leaf_index]
+            leaf_gap = leaf_positions[leaf_index +
+                                      leaf_pairs] - leaf_positions[leaf_index]
             if leaf_gap > 0:
                 exposed_open_leaf_pairs += 1
                 if leaf_gap < aperture:
@@ -382,11 +405,11 @@ def _control_point_weight(beam, control_point_index):
         control_point_index (int): The index of the control point dataset in the control point sequence.
     """
     if control_point_index == 0:
-        return beam.ControlPoints[0].CumulativeMetersetWeight / beam.FinalCumulativeMetersetWeight
+        return beam.ControlPointSequence[0].CumulativeMetersetWeight / beam.FinalCumulativeMetersetWeight
     else:
-        return (beam.ControlPoints[control_point_index].CumulativeMetersetWeight -
-                beam.ControlPoints[control_point_index - 1].CumulativeMetersetWeight) \
-               / beam.FinalCumulativeMetersetWeight
+        return (beam.ControlPointSequence[control_point_index].CumulativeMetersetWeight -
+                beam.ControlPointSequence[control_point_index - 1].CumulativeMetersetWeight) \
+            / beam.FinalCumulativeMetersetWeight
 
 
 def _has_multi_leaf_collimator(beam):
@@ -395,7 +418,7 @@ def _has_multi_leaf_collimator(beam):
     Args:
         beam (Dataset): The beam possibly containing multi-leaf collimator device type.
     """
-    for beam_limiting_device in beam.BeamLimitingDevices:
+    for beam_limiting_device in beam.BeamLimitingDeviceSequence:
         if 'MLC' in beam_limiting_device.RTBeamLimitingDeviceType:
             return True
     return False
@@ -407,7 +430,7 @@ def _leaf_position_boundaries(beam):
     Args:
         beam (Dataset): The beam for the small aperture score to be calculated.
     """
-    for beam_limiting_device in beam.BeamLimitingDevices:
+    for beam_limiting_device in beam.BeamLimitingDeviceSequence:
         if 'MLC' in beam_limiting_device.RTBeamLimitingDeviceType:
             return beam_limiting_device.LeafPositionBoundaries
 
@@ -426,16 +449,17 @@ def _maximum_leaf_separations(beam):
     number_leaf_pairs = len(_leaf_position_boundaries(beam)) - 1
     leaf_separations = np.array([0] * number_leaf_pairs)
     leaf_pair_indices = range(number_leaf_pairs)
-    for control_point in beam.ControlPoints:
+    for control_point in beam.ControlPointSequence:
         leaf_positions = _control_point_leaf_positions(control_point)
         for index in leaf_pair_indices:
-            curr_aperture = leaf_positions[index + number_leaf_pairs] - leaf_positions[index]
+            curr_aperture = leaf_positions[index +
+                                           number_leaf_pairs] - leaf_positions[index]
             if curr_aperture > leaf_separations[index]:
                 leaf_separations[index] = curr_aperture
     return leaf_separations
 
 
-def _weighted_metric(beam, metric):
+def _weighted_metric(beam, metric: str):
     """ Return the MU weighted average of a control point metric.
 
     Args:
@@ -448,12 +472,14 @@ def _weighted_metric(beam, metric):
     leaf_positions = []
     orthogonal_jaw_positions = []
     leaf_boundaries = _leaf_position_boundaries(beam)
-    for control_point in beam.ControlPoints:
+    for control_point in beam.ControlPointSequence:
         differential_weight = (control_point.CumulativeMetersetWeight - previous_cumulative_weight) / \
-                              total_cumulative_weight
+            total_cumulative_weight
         previous_cumulative_weight = control_point.CumulativeMetersetWeight
-        control_point_leaf_positions = _control_point_leaf_positions(control_point)
-        control_point_orthogonal_jaw_positions = _control_point_orthogonal_jaw_positions(control_point)
+        control_point_leaf_positions = _control_point_leaf_positions(
+            control_point)
+        control_point_orthogonal_jaw_positions = _control_point_orthogonal_jaw_positions(
+            control_point)
         if control_point_leaf_positions is not None:
             leaf_positions = control_point_leaf_positions
         if control_point_orthogonal_jaw_positions is not None:
@@ -463,6 +489,20 @@ def _weighted_metric(beam, metric):
                                                                                orthogonal_jaw_positions,
                                                                                leaf_boundaries)
     return result
+
+
+def _is_valid_metric(metric: str):
+    """ Determines whether metric is valid.
+
+    Args:
+        metric (str): The metric to be evaluated.
+    """
+    if metric in _metric_list:
+        return True
+    if metric.startswith('SAS') and metric.replace('SAS', '').isnumeric():
+        return True
+    return False
+
 
 # define metric dictionary
 _metric_list = {'AAV': aperture_area_variability,
