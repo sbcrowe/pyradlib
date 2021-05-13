@@ -19,3 +19,4 @@ YaoFit() is described in:
 
 Further reading:
 > S. C. Peet, R. Wilks, T. Kairn, J. V. Trapp, S. B. Crowe, "Technical Note: Carlibrating radiochromic film in beams of uncertain quality," Med. Phys. 43(10): 5647-5652 (2016). 
+> E. Spelleken, S. B. Crowe, B. Sutherland, C. Challens, T. Kairn, "Accuracy and efficiency of published film dosimetry techniques using a flat bed scanner and EBT3 film," Australas. Phys. Eng. Sci. Med. 41(1): 117-128 (2018).
