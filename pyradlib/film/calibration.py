@@ -317,7 +317,7 @@ class LewisFit(Fit):
         # instantiate class variables
         self.dose_data = np.array(dose_data)
         self.film_data = np.array(response_data)
-        popt, pcov = optimize.curve_fit(self._lewis_fitting_function, response_data, dose_data, p0=[0, 1, 0])
+        popt, pcov = optimize.curve_fit(self._lewis_fitting_function, response_data, dose_data, p0=[np.min(response_data), 0.5, np.max(dose_data)])
         self.a, self.b, self.c = popt
         self.calculated_dose = self.dose(np.array(response_data))
         self.degrees_of_freedom = len(dose_data) - self.fit_parameters
@@ -325,7 +325,7 @@ class LewisFit(Fit):
     @staticmethod
     def _lewis_fitting_function(x, a, b, c):
         """The Lewis fitting function."""
-        return ((b) / (x + a)) + c
+        return ((c*(x-a)) / (b+a-x))
 
     def dose(self, response):
         """Returns dose corresponding to provided net response."""
@@ -333,9 +333,8 @@ class LewisFit(Fit):
 
     def description(self):
         """Returns text describing the calibration fit."""
-        return ('d(x)=((' + _default_number_format.format(self.b)
-                + ') / (x+' + _default_number_format.format(self.a)
-                + ')) + ' + _default_number_format.format(self.c))
+        return ('D(x)='+_default_number_format.format(self.c)+'(x-' + _default_number_format.format(self.a)
+                + ')/(' + _default_number_format.format(self.b+self.a) + '-x)')
 
 
 class YaoFit(Fit):
