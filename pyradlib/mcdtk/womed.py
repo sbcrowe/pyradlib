@@ -84,13 +84,13 @@ def write_beamnrc_input(path : str, simulation_name : str, energy : float, beam_
     jxxin = random.randint(0,30081)
     file_handle.write(str(histories) + ', ' + str(ixxin) + ', ' + str(jxxin) + ', 99, 2, 5000, 0, 0,  NCASE ETC.\n')
     if applicator in _cylindrical_applicators:
-        dbs_fs = _cylindrical_applicators[applicator][0]
+        dbs_fs = round(_cylindrical_applicators[applicator][0] + 3)
         dbs_ssd = _cylindrical_applicators[applicator][1] + 1.5
     elif applicator in _conical_applicators:
-        dbs_fs = _conical_applicators[applicator][0]
+        dbs_fs = round(_conical_applicators[applicator][0] + 3)
         dbs_ssd = _conical_applicators[applicator][1] + 1.5
     elif applicator in _square_applicators:
-        dbs_fs = np.max(_square_applicators[applicator][0:-1])
+        dbs_fs = round(np.sqrt(np.sum(np.array(_square_applicators[applicator][0:-1])**2)))
         dbs_ssd = _square_applicators[applicator][2]
     file_handle.write(str(dbs_fs) + ', ' + str(dbs_ssd) + ', 0, 0, 0, ,  DIRECTIONAL BREM OPTIONS\n')
     file_handle.write('-1, 10, 0.35, 1, 0, 0,  0.0, 0.0, 0.0, 0.0,  IQIN, ISOURCE + OPTIONS\n')
@@ -254,8 +254,8 @@ def write_beamnrc_input(path : str, simulation_name : str, energy : float, beam_
         field_length_1 = _square_applicators[applicator][0]
         field_length_2 = _square_applicators[applicator][1]
         focal_spot_distance = _square_applicators[applicator][2]
-        if applicator in _conical_endplates:
-            end_plate_thickness = _conical_endplates[applicator]
+        if applicator in _square_endplates:
+            end_plate_thickness = _square_endplates[applicator]
         else:
             end_plate_thickness = 0
         file_handle.write('*********** start of CM PYRAMIDS with identifier APERT  ***********\n')
@@ -278,7 +278,7 @@ def write_beamnrc_input(path : str, simulation_name : str, energy : float, beam_
         appl_xb = round((field_length_1 / 2) * (focal_spot_distance - end_plate_thickness) / focal_spot_distance, 5)
         appl_yf = round((field_length_2 / 2) * (17.6-1.5) / focal_spot_distance, 5)
         appl_yb = round((field_length_2 / 2) * (focal_spot_distance - end_plate_thickness) / focal_spot_distance, 5)
-        file_handle.write('17.6, ' + str(focal_spot_distance - end_plate_thickness) + ', ' + str(appl_xf) + ', ' + str(appl_xb) + ', ' + str(-appl_xf) + ', ' + str(-appl_xb) + ', ' + str(appl_yf) + ', ' + str(appl_yb) + ', ' + str(-appl_yf) + ', ' + str(-appl_yb) + ', ' + str((field_length_1 / 2) + _applicator_wall) + ', ' + str((field_length_2 / 2) + _applicator_wall) + '\n')
+        file_handle.write('17.6, ' + str(focal_spot_distance + 1.5 - end_plate_thickness) + ', ' + str(appl_xf) + ', ' + str(appl_xb) + ', ' + str(-appl_xf) + ', ' + str(-appl_xb) + ', ' + str(appl_yf) + ', ' + str(appl_yb) + ', ' + str(-appl_yf) + ', ' + str(-appl_yb) + ', ' + str((field_length_1 / 2) + _applicator_wall) + ', ' + str((field_length_2 / 2) + _applicator_wall) + '\n')
         file_handle.write(_default_ecut + ', ' + _default_pcut + ', 0, , 0, \n') # air
         file_handle.write(_default_ecut + ', ' + _default_pcut + ', 0, , 0, \n') # applicator
         file_handle.write(_default_pb_material + '\n')
@@ -336,8 +336,11 @@ def write_dosxyznrc_pdd_input(path : str, phase_space_path : str, applicator : s
         path (str): The path of the input file to be created.
         phase_space_path (str): The path of the phase space file to be used.
         simulation_name (str): The name of the simulation, to be inserted into DOSXYZnrc input file.
+        applicator (str): The applicator used in BEAMnrc simulations.
         histories (int): The number of histories to use in the simulation.
     """
+    if applicator not in _cylindrical_applicators and applicator not in _conical_applicators and applicator not in _square_applicators:
+        raise ValueError('Invalid applicator specified.')
     file_handle = open(path, 'w')
     file_handle.write(simulation_name + '\n')
     file_handle.write('1\n')
@@ -362,13 +365,13 @@ def write_dosxyznrc_pdd_input(path : str, phase_space_path : str, applicator : s
     file_handle.write('2, 2, 2, 2, 0, 200, 1, 0\n') # egslst printing
     file_handle.write('0, 0, 0, 0, 0, 0, 0, 0\n')
     if applicator in _cylindrical_applicators:
-        dbs_fs = _cylindrical_applicators[applicator][0]
+        dbs_fs = round(_cylindrical_applicators[applicator][0] + 3)
         dbs_ssd = _cylindrical_applicators[applicator][1] + 1.5
     elif applicator in _conical_applicators:
-        dbs_fs = _conical_applicators[applicator][0]
+        dbs_fs = round(_conical_applicators[applicator][0] + 3)
         dbs_ssd = _conical_applicators[applicator][1] + 1.5
     elif applicator in _square_applicators:
-        dbs_fs = np.max(_square_applicators[applicator][0:-1])
+        dbs_fs = round(np.sqrt(np.sum(np.array(_square_applicators[applicator][0:-1])**2)))
         dbs_ssd = _square_applicators[applicator][2]
     file_handle.write('2, 2, 0, 0, 0, 180, 90, 0, 180, 1, ' + str(dbs_fs) + ', ' + str(dbs_ssd) + ', ' + str(dbs_ssd) + ', 0\n') # iqin, etc.
     file_handle.write('2, 0, 0, 50, 0, 0, 0, 0\n')
@@ -410,6 +413,7 @@ def write_dosxyznrc_isodose_input(path : str, phase_space_path : str, applicator
     Args:
         path (str): The path of the input file to be created.
         phase_space_path (str): The path of the phase space file to be used.
+        applicator (str): The applicator used in BEAMnrc simulations.
         simulation_name (str): The name of the simulation, to be inserted into DOSXYZnrc input file.
         histories (int): The number of histories to use in the simulation.
         plane (str): The dose plane to be simulated, 'in-plane' or 'cross-plane'.
@@ -419,6 +423,8 @@ def write_dosxyznrc_isodose_input(path : str, phase_space_path : str, applicator
     # pre-conditions
     if plane not in ['in-plane', 'cross-plane']:
         raise ValueError('Invalid plane selection.')
+    if applicator not in _cylindrical_applicators and applicator not in _conical_applicators and applicator not in _square_applicators:
+        raise ValueError('Invalid applicator specified.')
     # write input file
     file_handle = open(path, 'w')
     file_handle.write(simulation_name + '\n')
@@ -451,13 +457,13 @@ def write_dosxyznrc_isodose_input(path : str, phase_space_path : str, applicator
     file_handle.write('2, 2, 2, 2, 0, 200, 1, 0\n') 
     file_handle.write('0, 0, 0, 0, 0, 0, 0, 0\n') 
     if applicator in _cylindrical_applicators:
-        dbs_fs = _cylindrical_applicators[applicator][0]
+        dbs_fs = round(_cylindrical_applicators[applicator][0] + 3)
         dbs_ssd = _cylindrical_applicators[applicator][1] + 1.5
     elif applicator in _conical_applicators:
-        dbs_fs = _conical_applicators[applicator][0]
+        dbs_fs = round(_conical_applicators[applicator][0] + 3)
         dbs_ssd = _conical_applicators[applicator][1] + 1.5
     elif applicator in _square_applicators:
-        dbs_fs = np.max(_square_applicators[applicator][0:-1])
+        dbs_fs = round(np.sqrt(np.sum(np.array(_square_applicators[applicator][0:-1])**2)))
         dbs_ssd = _square_applicators[applicator][2]
     file_handle.write('2, 2, 0, 0, 0, 180, 90, 0, 180, 1, ' + str(dbs_fs) + ', ' + str(dbs_ssd) + ', ' + str(dbs_ssd) + ', 0\n')
     file_handle.write('2, 0, 0, 50, 0, 0, 0, 0\n')
@@ -501,12 +507,15 @@ def write_uniform_dose_input(path : str, voxel_size : float, phantom_size : floa
         voxel_size (float): The size of the voxels, in cm.
         phantom_size (float): The size of the phantom, in cm.
         phase_space_path (str): The path of the phase space file to be used.
+        applicator (str): The applicator used in BEAMnrc simulations.
         simulation_name (str): The name of the simulation, to be inserted into DOSXYZnrc input file.
         histories (int): The number of histories to use in the simulation.
     """
     # pre-conditions
     if not np.isclose(phantom_size % voxel_size, 0):
         raise ValueError('Phantom size not divisible by voxel size.')
+    if applicator not in _cylindrical_applicators and applicator not in _conical_applicators and applicator not in _square_applicators:
+        raise ValueError('Invalid applicator specified.')
     # determine number of voxels
     boundary = phantom_size / 2
     voxels = int(phantom_size / voxel_size)
@@ -528,13 +537,13 @@ def write_uniform_dose_input(path : str, voxel_size : float, phantom_size : floa
     file_handle.write('2, 2, 2, 2, 0, 200, 1, 0\n')
     file_handle.write('0, 0, 0, 0, 0, 0, 0, 0\n')
     if applicator in _cylindrical_applicators:
-        dbs_fs = _cylindrical_applicators[applicator][0]
+        dbs_fs = round(_cylindrical_applicators[applicator][0] + 3)
         dbs_ssd = _cylindrical_applicators[applicator][1] + 1.5
     elif applicator in _conical_applicators:
-        dbs_fs = _conical_applicators[applicator][0]
+        dbs_fs = round(_conical_applicators[applicator][0] + 3)
         dbs_ssd = _conical_applicators[applicator][1] + 1.5
     elif applicator in _square_applicators:
-        dbs_fs = np.max(_square_applicators[applicator][0:-1])
+        dbs_fs = round(np.sqrt(np.sum(np.array(_square_applicators[applicator][0:-1])**2)))
         dbs_ssd = _square_applicators[applicator][2]
     file_handle.write('2, 2, 0, 0, 0, 180, 90, 0, 180, 1, ' + str(dbs_fs) + ', ' + str(dbs_ssd) + ', ' + str(dbs_ssd) + ', 0\n')
     file_handle.write('2, 0, 0, 50, 0, 0, 0, 0\n')
