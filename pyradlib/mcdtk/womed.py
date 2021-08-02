@@ -55,7 +55,8 @@ _cylindrical_applicators = { 'd2' : [1, 30], 'd3' : [1.5, 30], 'd5' : [2.5, 30] 
 _cylindrical_endplates = { } 
 _conical_applicators = { 'd10' : [5, 30] }
 _conical_endplates = { 'd10' : 0.1 }
-_square_applicators = { '5x7' : [5, 7, 50], '8x8' : [8, 8, 50], '10x10' : [10, 10, 50], '10x20' : [10, 20, 50], '15x15' : [15, 15, 50], '20x20' : [20, 20, 50]}
+_square_applicators = { '5x7' : [5.2, 7.2, 50], '8x8' : [8.2, 8.2, 50], '10x10' : [10.2, 10.2, 50], '10x20' : [10.2, 20.2, 50], '15x15' : [15.2, 15.2, 50], '20x20' : [20.2, 20.2, 50]}
+_square_apertures = { '5x7' : [2.01, 2.654], '8x8' : [2.976, 2.976], '10x10' : [3.62, 3.62], '10x20' : [3.62, 6.85], '15x15' : [5.23, 5.23], '20x20' : [6.85, 6.85] }
 _square_endplates = { '5x7' : 0.1, '8x8' : 0.1, '10x10' : 0.1, '10x20' : 0.1, '15x15' : 0.1, '20x20' : 0.1 }
 _applicator_wall = 0.5
 
@@ -262,10 +263,23 @@ def write_beamnrc_input(path : str, simulation_name : str, energy : float, beam_
         file_handle.write('15, RMAX\n')
         file_handle.write('APERT\n')
         file_handle.write('1,0\n')
-        apert_xf = round((field_length_1 / 2) * (16.7-1.5) / focal_spot_distance, 5)
-        apert_xb = round((field_length_1 / 2) * (17.5-1.5) / focal_spot_distance, 5)
-        apert_yf = round((field_length_2 / 2) * (16.7-1.5) / focal_spot_distance, 5)
-        apert_yb = round((field_length_2 / 2) * (17.5-1.5) / focal_spot_distance, 5)
+        if applicator in _square_apertures:
+            aperture_sizes = _square_apertures[applicator]
+            apert_xf = round((aperture_sizes[0] / 2), 5)
+            apert_xb = round((aperture_sizes[0] / 2), 5)
+            appl_xf = round((aperture_sizes[0] / 2), 5)
+            apert_yf = round((aperture_sizes[1] / 2), 5)
+            apert_yb = round((aperture_sizes[1] / 2), 5)
+            appl_yf = round((aperture_sizes[1] / 2), 5)
+        else: # calculate as focused components
+            apert_xf = round((field_length_1 / 2) * (16.7-1.5) / focal_spot_distance, 5)
+            apert_xb = round((field_length_1 / 2) * (17.5-1.5) / focal_spot_distance, 5)
+            apert_yf = round((field_length_2 / 2) * (16.7-1.5) / focal_spot_distance, 5)
+            apert_yb = round((field_length_2 / 2) * (17.5-1.5) / focal_spot_distance, 5)
+            appl_xf = round((field_length_1 / 2) * (17.6-1.5) / focal_spot_distance, 5)
+            appl_yf = round((field_length_2 / 2) * (17.6-1.5) / focal_spot_distance, 5)
+        appl_xb = round((field_length_1 / 2) * (focal_spot_distance - end_plate_thickness) / focal_spot_distance, 5)
+        appl_yb = round((field_length_2 / 2) * (focal_spot_distance - end_plate_thickness) / focal_spot_distance, 5)
         file_handle.write('16.7, 17.5, ' + str(apert_xf) + ', ' + str(apert_xb) + ', ' + str(-apert_xf) + ', ' + str(-apert_xb) + ', ' + str(apert_yf) + ', ' + str(apert_yb) + ', ' + str(-apert_yf) + ', ' + str(-apert_yb) + ', 15, 15\n')
         file_handle.write(_default_ecut + ', ' + _default_pcut + ', 0, , 0, \n') # air
         file_handle.write(_default_ecut + ', ' + _default_pcut + ', 0, , 0, \n') # flange
@@ -274,10 +288,6 @@ def write_beamnrc_input(path : str, simulation_name : str, energy : float, beam_
         file_handle.write('15, RMAX\n')
         file_handle.write('APPL\n')
         file_handle.write('1,0\n')
-        appl_xf = round((field_length_1 / 2) * (17.6-1.5) / focal_spot_distance, 5)
-        appl_xb = round((field_length_1 / 2) * (focal_spot_distance - end_plate_thickness) / focal_spot_distance, 5)
-        appl_yf = round((field_length_2 / 2) * (17.6-1.5) / focal_spot_distance, 5)
-        appl_yb = round((field_length_2 / 2) * (focal_spot_distance - end_plate_thickness) / focal_spot_distance, 5)
         file_handle.write('17.6, ' + str(focal_spot_distance + 1.5 - end_plate_thickness) + ', ' + str(appl_xf) + ', ' + str(appl_xb) + ', ' + str(-appl_xf) + ', ' + str(-appl_xb) + ', ' + str(appl_yf) + ', ' + str(appl_yb) + ', ' + str(-appl_yf) + ', ' + str(-appl_yb) + ', ' + str((field_length_1 / 2) + _applicator_wall) + ', ' + str((field_length_2 / 2) + _applicator_wall) + '\n')
         file_handle.write(_default_ecut + ', ' + _default_pcut + ', 0, , 0, \n') # air
         file_handle.write(_default_ecut + ', ' + _default_pcut + ', 0, , 0, \n') # applicator
