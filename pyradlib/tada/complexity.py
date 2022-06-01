@@ -23,7 +23,7 @@ _default_metrics = ['MCS']
 
 
 def plan_complexity(plan: pydicom.dataset.Dataset, metrics=_default_metrics):
-    """ Calculate the complexity of a treatment beam.
+    """ Calculate the complexity of a treatment plan.
 
     Args:
         plan (Dataset): The radiotherapy treatment plan.
@@ -41,19 +41,18 @@ def plan_complexity(plan: pydicom.dataset.Dataset, metrics=_default_metrics):
             ref_beam_numbers.append(ref_beam.ReferencedBeamNumber)
             ref_beam_monitor_units.append(ref_beam.BeamMeterset)
             ref_beam_dose.append(ref_beam.BeamDose)
-    columns = ['Name', 'MU', 'Dose']
+    columns = ['Patient ID', 'Patient Name', 'Plan Name', 'Beam Name', 'MU', 'Dose']
     columns.extend(metrics)
-    data_frame = pd.DataFrame(index=ref_beam_numbers, columns=columns)
+    complexity_data = []
     for beam in plan.BeamSequence:
-        beamNumber = beam.BeamNumber
-        if beamNumber in data_frame.index:
-            result = [beam.BeamName,
-                      ref_beam_monitor_units[ref_beam_numbers.index(
-                          beamNumber)],
-                      ref_beam_dose[ref_beam_numbers.index(beamNumber)]]
-            result.extend(beam_complexity(beam, metrics))
-            data_frame.loc[beamNumber] = result
-    return data_frame
+        beam_number = beam.BeamNumber
+        beam_result = [plan.PatientID, str(plan.PatientName).rstrip('^'),
+                       plan.RTPlanName, beam.BeamName,
+                       ref_beam_monitor_units[ref_beam_numbers.index(beam_number)],
+                       ref_beam_dose[ref_beam_numbers.index(beam_number)]]
+        beam_result.extend(beam_complexity(beam, metrics))
+        complexity_data.append(beam_result)
+    return columns, complexity_data
 
 
 def beam_complexity(beam: pydicom.dataset.Dataset, metrics=_default_metrics):
