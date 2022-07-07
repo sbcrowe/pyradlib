@@ -20,6 +20,8 @@ _default_integration_limit = 1
 _default_integration_epsilon = 0.05
 _default_identifies = ['name', 'mu']
 _default_metrics = ['MCS']
+_default_plan_name = ''
+_default_beam_name = ''
 
 
 def plan_complexity(plan: pydicom.dataset.Dataset, metrics=_default_metrics):
@@ -36,18 +38,26 @@ def plan_complexity(plan: pydicom.dataset.Dataset, metrics=_default_metrics):
     ref_beam_numbers = []
     ref_beam_monitor_units = []
     ref_beam_dose = []
+    if 'RTPlanName' in plan:
+        plan_name = plan.RTPlanName
+    else:
+        plan_name = _default_plan_name
     for fraction_group in plan.FractionGroupSequence:
         for ref_beam in fraction_group.ReferencedBeamSequence:
             ref_beam_numbers.append(ref_beam.ReferencedBeamNumber)
             ref_beam_monitor_units.append(ref_beam.BeamMeterset)
             ref_beam_dose.append(ref_beam.BeamDose)
-    columns = ['Patient ID', 'Patient Name', 'Plan Name', 'Beam Name', 'MU', 'Dose']
+    columns = ['Patient ID', 'Patient Name', 'Plan Name', 'Beam Number', 'Beam Name', 'MU', 'Dose']
     columns.extend(metrics)
     complexity_data = []
     for beam in plan.BeamSequence:
         beam_number = beam.BeamNumber
+        if 'BeamName' in beam:
+            beam_name = beam.BeamName
+        else:
+            beam_name = ''
         beam_result = [plan.PatientID, str(plan.PatientName).rstrip('^'),
-                       plan.RTPlanName, beam.BeamName,
+                       plan_name, beam.BeamNumber, beam_name,
                        ref_beam_monitor_units[ref_beam_numbers.index(beam_number)],
                        ref_beam_dose[ref_beam_numbers.index(beam_number)]]
         beam_result.extend(beam_complexity(beam, metrics))
@@ -106,6 +116,15 @@ def aperture_area_variability(beam: pydicom.dataset.Dataset):
                                                                leaf_boundaries, maximum_leaf_separation) * \
                 differential_weight
     return result
+
+
+def average_leaf_pair_opening(beam: pydicom.dataset.Dataset):
+    """ Calculate the average leaf pair opening of a treatment beam.
+
+    Args:
+        beam (Dataset): The beam for the average leaf pair opening to be calculated.
+    """
+    return _weighted_metric(beam, 'ALPO')
 
 
 def closed_leaf_score(beam: pydicom.dataset.Dataset):
@@ -211,6 +230,31 @@ def small_aperture_score(beam: pydicom.dataset.Dataset, aperture: float = 10):
     return result
 
 
+def _control_point_average_leaf_pair_opening(leaf_positions, orthogonal_jaw_positions, leaf_boundaries):
+    """ Return the average leaf pair opening for specified control point data. 
+    
+    Args:
+        leaf_positions (np.array): The positions of the leaves, defined at isocentre (mm).
+        orthogonal_jaw_positions (np.array): The position of the orthogonal jaws.
+        leaf_boundaries (np.array): The edge positions of leaf pairs, orthogonal to motion.
+    """
+    leaf_pairs = int(len(leaf_positions) / 2)
+    total_leaf_pair_separation = 0
+    exposed_open_leaf_pairs = 0
+
+    for leaf_index in range(leaf_pairs):
+        if leaf_boundaries[leaf_index + 1] >= orthogonal_jaw_positions[0] \
+                and leaf_boundaries[leaf_index] <= orthogonal_jaw_positions[1]:
+            leaf_gap = leaf_positions[leaf_index +
+                                      leaf_pairs] - leaf_positions[leaf_index]
+            if leaf_gap > 0:
+                exposed_open_leaf_pairs += 1
+                total_leaf_pair_separation += leaf_gap
+    if exposed_open_leaf_pairs > 0:
+        return total_leaf_pair_separation / exposed_open_leaf_pairs
+    return 0
+
+
 def _control_point_aperture_area_variability(leaf_positions, orthogonal_jaw_positions, leaf_boundaries,
                                              maximum_leaf_separations):
     leaf_pairs = int(len(leaf_positions) / 2)
@@ -271,7 +315,7 @@ def _control_point_jaw_positions(control_point: pydicom.dataset.Dataset, jaw_axi
 
 
 def _control_point_leaf_positions(control_point: pydicom.dataset.Dataset):
-    """ Return the leaf positions for specified control point.
+    """ Return the leaf positions for specified control point, defined at isocentre (mm).
 
     Args:
         control_point (Dataset): The control point containing leaf position data.
@@ -284,10 +328,11 @@ def _control_point_leaf_positions(control_point: pydicom.dataset.Dataset):
 def _control_point_leaf_sequence_variability(leaf_positions, orthogonal_jaw_positions, leaf_boundaries):
     """ Return the leaf sequence variability for control point.
 
-     Args:
-         control_point (Dataset): The control point containing leaf position data.
-         leaf_boundaries (np.array): The edge positions of leaf pairs, orthogonal to motion.
-     """
+    Args:
+        leaf_positions (np.array): The positions of the leaves, defined at isocentre (mm).
+        orthogonal_jaw_positions (np.array): The position of the orthogonal jaws.
+        leaf_boundaries (np.array): The edge positions of leaf pairs, orthogonal to motion.
+    """
     leaf_pairs = int(len(leaf_positions) / 2)
     exposed_open_leaf_pairs = 0
     leaf_positions_left = []
@@ -321,8 +366,9 @@ def _control_point_mean_asymmetry_distance(leaf_positions, orthogonal_jaw_positi
     """ Return the mean asymmetry distance for the specified control point.
 
      Args:
-         control_point (Dataset): The control point containing leaf position data.
-         leaf_boundaries (np.array): The edge positions of leaf pairs, orthogonal to motion.
+        leaf_positions (np.array): The positions of the leaves, defined at isocentre (mm).
+        orthogonal_jaw_positions (np.array): The position of the orthogonal jaws.
+        leaf_boundaries (np.array): The edge positions of leaf pairs, orthogonal to motion.
      """
     leaf_pairs = int(len(leaf_positions) / 2)
     exposed_open_leaf_pairs = 0
@@ -505,6 +551,7 @@ def _is_valid_metric(metric: str):
 
 # define metric dictionary
 _metric_list = {'AAV': aperture_area_variability,
+                'ALPO': average_leaf_pair_opening,
                 'CLS': closed_leaf_score,
                 'CAS': cross_axis_score,
                 'LSV': leaf_sequence_variability,
@@ -512,7 +559,8 @@ _metric_list = {'AAV': aperture_area_variability,
                 'MCS': modulation_complexity_score}
 
 # define control point metric dictionary
-_control_point_metric_list = {'CLS': _control_point_closed_leaf_score,
+_control_point_metric_list = {'ALPO': _control_point_average_leaf_pair_opening,
                               'CAS': _control_point_cross_axis_score,
+                              'CLS': _control_point_closed_leaf_score,
                               'LSV': _control_point_leaf_sequence_variability,
                               'MAD': _control_point_mean_asymmetry_distance}
