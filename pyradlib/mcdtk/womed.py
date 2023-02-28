@@ -92,7 +92,7 @@ def write_beamnrc_input(path : str, simulation_name : str, energy : float, beam_
         dbs_ssd = _conical_applicators[applicator][1] + 1.5
     elif applicator in _square_applicators:
         dbs_fs = round(np.sqrt(np.sum(np.array(_square_applicators[applicator][0:-1])**2)))
-        dbs_ssd = _square_applicators[applicator][2]
+        dbs_ssd = _square_applicators[applicator][2] + 1.5
     file_handle.write(str(dbs_fs) + ', ' + str(dbs_ssd) + ', 0, 0, 0, ,  DIRECTIONAL BREM OPTIONS\n')
     file_handle.write('-1, 10, 0.35, 1, 0, 0,  0.0, 0.0, 0.0, 0.0,  IQIN, ISOURCE + OPTIONS\n')
     file_handle.write('0, MONOENERGETIC\n')
@@ -382,7 +382,7 @@ def write_dosxyznrc_pdd_input(path : str, phase_space_path : str, applicator : s
         dbs_ssd = _conical_applicators[applicator][1] + 1.5
     elif applicator in _square_applicators:
         dbs_fs = round(np.sqrt(np.sum(np.array(_square_applicators[applicator][0:-1])**2)))
-        dbs_ssd = _square_applicators[applicator][2]
+        dbs_ssd = _square_applicators[applicator][2] + 1.5
     file_handle.write('2, 2, 0, 0, 0, 180, 90, 0, 180, 1, ' + str(dbs_fs) + ', ' + str(dbs_ssd) + ', ' + str(dbs_ssd) + ', 0\n') # iqin, etc.
     file_handle.write('2, 0, 0, 50, 0, 0, 0, 0\n')
     file_handle.write(phase_space_path + '\n')
@@ -474,7 +474,7 @@ def write_dosxyznrc_isodose_input(path : str, phase_space_path : str, applicator
         dbs_ssd = _conical_applicators[applicator][1] + 1.5
     elif applicator in _square_applicators:
         dbs_fs = round(np.sqrt(np.sum(np.array(_square_applicators[applicator][0:-1])**2)))
-        dbs_ssd = _square_applicators[applicator][2]
+        dbs_ssd = _square_applicators[applicator][2] + 1.5
     file_handle.write('2, 2, 0, 0, 0, 180, 90, 0, 180, 1, ' + str(dbs_fs) + ', ' + str(dbs_ssd) + ', ' + str(dbs_ssd) + ', 0\n')
     file_handle.write('2, 0, 0, 50, 0, 0, 0, 0\n')
     file_handle.write(phase_space_path + '\n')
@@ -554,7 +554,7 @@ def write_uniform_dose_input(path : str, voxel_size : float, phantom_size : floa
         dbs_ssd = _conical_applicators[applicator][1] + 1.5
     elif applicator in _square_applicators:
         dbs_fs = round(np.sqrt(np.sum(np.array(_square_applicators[applicator][0:-1])**2)))
-        dbs_ssd = _square_applicators[applicator][2]
+        dbs_ssd = _square_applicators[applicator][2] + 1.5
     file_handle.write('2, 2, 0, 0, 0, 180, 90, 0, 180, 1, ' + str(dbs_fs) + ', ' + str(dbs_ssd) + ', ' + str(dbs_ssd) + ', 0\n')
     file_handle.write('2, 0, 0, 50, 0, 0, 0, 0\n')
     file_handle.write(phase_space_path + '\n')
