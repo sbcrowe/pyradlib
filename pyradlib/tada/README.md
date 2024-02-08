@@ -16,6 +16,7 @@ The application of the TADA code has been described in:
 ### Complexity metrics
 Many of the complexity metrics implemented in this code have been described in review articles:
 > M. Antoine, F. Ralite, C. Soustiel, T. Marsac, P. Sargos, A. Cugny, J. Caron, "Use of metrics to quantify IMRT and VMAT treatment plan complexity: A systematic review and perspectives," Physica Medical 64: 98-108 (2019)
+
 > S. Chiavassa, I. Bessieres, M. Edouard, M. Mathot, A. Moignier, "Complexity metrics for IMRT and VMAT plans: a review of current literature and applications," Br. J. Radiol. 92(1102): 20190270 (2019)
 
 The average leaf pair opening (ALPO) is described in:
