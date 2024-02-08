@@ -4,24 +4,30 @@
 This module provides EGSnrc file handling functionality.
 """
 
-# define default parameters
-_default_electron_energy_cutoff = 0.521
-_default_photon_energy_cutoff = 0.01
-_default_exact_boundary_crossing = True
-_default_low_energy_simulation = False
 
+def transport_parameter_text(
+    electron_energy_cutoff=0.521,
+    photon_energy_cutoff=0.01,
+    exact_boundary_crossing=True,
+    low_energy_simulation=False,
+):
+    """Produce EGSnrc transport text, for inclusion in EGSnrc input files.
 
-def transport_parameter_text(electron_energy_cutoff=_default_electron_energy_cutoff,
-                             photon_energy_cutoff=_default_photon_energy_cutoff,
-                             exact_boundary_crossing=_default_exact_boundary_crossing,
-                             low_energy_simulation=_default_low_energy_simulation):
-    """ Produce EGSnrc transport text, for inclusion in EGSnrc input files.
+    Parameters
+    ----------
+    electron_energy_cutoff : float, optional
+        Global ECUT value.
+    photon_energy_cutoff : float
+        Global PCUT value.
+    exact_boundary_crossing : bool
+        Flag for use of EXACT boundary crossing algorithm use (default is True).
+    low_energy_simulation : bool
+        Flag for simulation of low energy particles, including NRC cross sections, Rayleigh scattering, atomic relaxation, etc. (default is False).
 
-    Args:
-        electron_energy_cutoff (float): The global ECUT value.
-        photon_energy_cutoff (float): The global PCUT value.
-        exact_boundary_crossing (bool): Flag for EXACT boundary crossing algorithm use.
-        low_energy_simulation (bool): Flag for simulation of low energy particles.
+    Returns
+    -------
+    transport_parameters : array_like
+        List containing EGSnrc transport parameter strings, for us in EGSnrc input file.
     """
     parameter_text = []
     parameter_text.append(" #########################")
@@ -41,30 +47,30 @@ def transport_parameter_text(electron_energy_cutoff=_default_electron_energy_cut
     else:
         parameter_text.append("Boundary crossing algorithm= PRESTA-I")
         parameter_text.append("Skin depth for BCA= 0")
-    parameter_text.append(" Electron-step algorithm= PRESTA-II");
+    parameter_text.append(" Electron-step algorithm= PRESTA-II")
     parameter_text.append(" Spin effects= On")
     if low_energy_simulation:
         parameter_text.append(" Brems angular sampling= KM")
     else:
-        parameter_text.append(" Brems angular sampling= Simple");
+        parameter_text.append(" Brems angular sampling= Simple")
     parameter_text.append(" Brems cross sections= BH")
     parameter_text.append(" Triplet production= Off")
     parameter_text.append(" Bound Compton scattering= On")
     parameter_text.append(" Radiative Compton corrections= Off")
     parameter_text.append(" Pair angular sampling= Simple")
     if low_energy_simulation:
-        parameter_text.append(" Pair cross sections= NRC");
+        parameter_text.append(" Pair cross sections= NRC")
     else:
         parameter_text.append(" Pair cross sections= BH")
-    parameter_text.append(" Photoelectron angular sampling= Off");
+    parameter_text.append(" Photoelectron angular sampling= Off")
     if low_energy_simulation:
-        parameter_text.append(" Rayleigh scattering= On");
+        parameter_text.append(" Rayleigh scattering= On")
     else:
-        parameter_text.append(" Rayleigh scattering= Off");
+        parameter_text.append(" Rayleigh scattering= Off")
     if low_energy_simulation:
-        parameter_text.append(" Atomic relaxations= On");
+        parameter_text.append(" Atomic relaxations= On")
     else:
-        parameter_text.append(" Atomic relaxations= Off");
+        parameter_text.append(" Atomic relaxations= Off")
     parameter_text.append(" Electron impact ionization= Off")
     parameter_text.append("")
     parameter_text.append(" :Stop MC Transport Parameter:")
