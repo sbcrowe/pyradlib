@@ -1,0 +1,18 @@
+* MotionData
+  * Version
+  * DeliverySegment
+    * SegmentIndex
+    * RadiationResults
+      * ResultsIndex
+      * ModelData
+        * PotentialDifferenceTolerance
+        * MeasuredDifferenceTolerance
+        * DataPoint
+          * Timestamp
+          * PotentialDiff
+          * RigidBody
+          * TargetOffset
+            * X
+            * Y
+            * Z
+          * MeasuredDifference
