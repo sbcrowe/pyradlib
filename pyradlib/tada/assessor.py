@@ -33,7 +33,7 @@ def analyse_plan(path: str, metrics=_default_metrics):
         metrics (list): List of metrics to calculate.
     """
     ds = pydicom.read_file(path)
-    columns, complexity_data = complexity.plan_complexity(ds)
+    columns, complexity_data = complexity.plan_complexity(ds, metrics)
     return pd.DataFrame(complexity_data, columns=columns)
 
 
@@ -49,6 +49,6 @@ def analyse_plan_archive(path: str, metrics=_default_metrics):
         for name in files:
             if name.lower().startswith(_default_plan_prefix) and name.lower().endswith(_default_plan_extension):
                 ds = pydicom.read_file(os.path.join(root,name))
-                columns, plan_complexity = complexity.plan_complexity(ds)
+                columns, plan_complexity = complexity.plan_complexity(ds, metrics)
                 complexity_data.extend(plan_complexity)
     return pd.DataFrame(complexity_data, columns = columns)
