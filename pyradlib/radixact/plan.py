@@ -12,13 +12,92 @@ __credits__ = []
 __license__ = "GPL3"
 
 # import required code
+import glob
 import numpy as np
 import numpy.typing as npt
+import os
 import pandas as pd
+import pydicom
 import xml.etree.ElementTree as et
 
 
-def read_plan_data(xml_filepaths: npt.ArrayLike):
+def read_dcm_plan_data(dcm_filepaths: npt.ArrayLike):
+    """Extracts data from multiple RTPLAN*.dcm files exported from the treatment
+    planning system.
+
+    Parameters
+    ----------
+    dcm_filepaths : array_like
+        List to paths of RTPLAN DICOM files containing plan data.
+
+    Returns
+    -------
+    results : Pandas DataFrame
+        A dataframe containing data extracted from the DICOM files.
+    """
+    header = [
+        "URN",
+        "Last Name",
+        "First Name",
+        "Physician",
+        "Plan",
+        "Plan Date",
+        "Plan Intent",
+        "Linear Accelerator",
+        "Prescribed dose (cGy)",
+        "Number of fractions",
+        "Pitch",
+        "Field width (cm)",
+        "Number of Control Points",
+        "Isocentre (IEC-X)",
+        "Isocentre (IEC-Y Start)",
+        "Isocentre (IEC-Y Final)",
+        "Isocentre (IEC-Z)",
+    ]
+    results = []
+    for dcm_path in dcm_filepaths:
+        curr_result = []
+        df = pydicom.read_file(dcm_path)
+        curr_result.append(df.PatientID)
+        curr_result.append(str(df.PatientName).split("^")[0])
+        curr_result.append(" ".join(str(df.PatientName).split("^")[1:]))
+        curr_result.append(str(df.OperatorsName))
+        curr_result.append(df.RTPlanName)
+        curr_result.append(df.RTPlanDate)
+        curr_result.append(df.PlanIntent)
+        curr_result.append(df.DeviceSerialNumber)
+        curr_result.append(
+            float(df.DoseReferenceSequence[0].TargetPrescriptionDose) * 100
+        )
+        curr_result.append(int(df.FractionGroupSequence[0].NumberOfFractionsPlanned))
+        curr_result.append(
+            float(
+                df.BeamSequence[0].BeamDescription.split(" ")[0].replace("Pitch=", "")
+            )
+        )
+        curr_result.append(
+            float(
+                df.BeamSequence[0].BeamDescription.split(" ")[-1].replace("width=", "")
+            )
+        )
+        curr_result.append(int(df.BeamSequence[0].NumberOfControlPoints))
+        curr_result.append(
+            float(df.BeamSequence[0].ControlPointSequence[0].IsocenterPosition[0])
+        )
+        curr_result.append(
+            float(df.BeamSequence[0].ControlPointSequence[0].IsocenterPosition[2])
+        )
+        curr_result.append(
+            float(df.BeamSequence[0].ControlPointSequence[-1].IsocenterPosition[2])
+        )
+        curr_result.append(
+            float(df.BeamSequence[0].ControlPointSequence[0].IsocenterPosition[1])
+        )
+        results.append(curr_result)
+    return pd.DataFrame(results, columns=header)
+
+
+def read_xml_plan_data(xml_filepaths: npt.ArrayLike):
     """Extracts data from multiple GeneralPlan*.xml files produced for the Radixact
     Delivery Analysis tool.
 
@@ -34,8 +113,8 @@ def read_plan_data(xml_filepaths: npt.ArrayLike):
 
     Notes
     -----
-    These files are cached in C:/tomo/da/pts/URnumber/*motionData.xml when patient data
-    is loaded within the Delivery Analysis tool. There may be multiple files per fraction.
+    These files are cached in C:/tomo/da/pts/URnumber/GeneralPlan*.xml when patient data
+    is loaded within the Delivery Analysis tool. There will be one file per plan.
     """
     header = [
         "URN",
@@ -77,7 +156,50 @@ def read_plan_data(xml_filepaths: npt.ArrayLike):
     return pd.DataFrame(results, columns=header)
 
 
-def read_dose_objectives(xml_filepath: str):
+def read_patient_xml_plan_data(patient_path: str):
+    """Extracts data from GeneralPlan*.xml files contained within specific patient directory.
+
+    Parameters
+    ----------
+    patient_path : str
+        The path containing the GeneralPlan*.xml files to be read.
+
+    Returns
+    -------
+    results : Pandas DataFrame
+        A dataframe containing data extracted from the xml files.
+
+    Notes
+    -----
+    These files are cached in C:/tomo/da/pts/URnumber/*motionData.xml when patient data
+    is loaded within the Delivery Analysis tool. There may be multiple files per fraction.
+    """
+    return read_xml_plan_data(glob.glob(os.path.join(patient_path, "GeneralPlan*.xml")))
+
+
+def read_patient_dcm_plan_data(patient_path: str):
+    """Extracts data from multiple RTPLAN*.dcm contained within specific patient directory.
+
+    Parameters
+    ----------
+    patient_path : str
+        The path containing directories with RTPLAN*.dcm files to be read.
+
+    Returns
+    -------
+    results : Pandas DataFrame
+        A dataframe containing data extracted from the DICOM files.
+
+    Notes
+    -----
+    It is assumed that these files have been downloaded from within Precision, and that each
+    RTPLAN*.dcm file will be located within its own DCM_* subdirectory. These subdirectories
+    are searched using a recursive glob function.
+    """
+    return read_dcm_plan_data(glob.glob(os.path.join(patient_path, "**/RTPLAN*.dcm")))
+
+
+def read_xml_dose_objectives(xml_filepath: str):
     """Extracts dose objective data from a GeneralPlan*.xml file produced for the
     Radixact Delivery Analysis tool.
 
@@ -152,3 +274,35 @@ def read_dose_objectives(xml_filepath: str):
                     + unit_dict[crit_quantity]
                 )
     return results
+
+
+def has_xml_plan_data(patient_path: str):
+    """Check whether XML plan data exists within specific patient directory.
+
+    Parameters
+    ----------
+    patient_path : str
+        The path nominally containing GeneralPlan*.xml files.
+
+    Returns
+    -------
+    result : bool
+        True, if GeneralPlan*.xml found, otherwise False.
+    """
+    return len(glob.glob(os.path.join(patient_path, "GeneralPlan*.xml"))) > 0
+
+
+def has_dcm_plan_data(patient_path: str):
+    """Check whether DICOM plan data exists within specific patient directory.
+
+    Parameters
+    ----------
+    patient_path : str
+        The path containing directories with RTPLAN*.dcm files to be read.
+
+    Returns
+    -------
+    result : bool
+        True, if RTPLAN*.dcm files found, otherwise False.
+    """
+    return len(glob.glob(os.path.join(patient_path, "**/RTPLAN*.dcm"))) > 0
