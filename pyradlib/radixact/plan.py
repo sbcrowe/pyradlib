@@ -46,13 +46,19 @@ def read_dcm_plan_data(dcm_filepaths: npt.ArrayLike):
         "Linear Accelerator",
         "Prescribed dose (cGy)",
         "Number of fractions",
+        "Daily dose (cGy)",
+        "Beam time (s)",
         "Pitch",
-        "Field width (cm)",
+        "Field width (mm)",
+        "Dynamic jaw",
+        "Gantry rotation time (s)",
+        "Couch speed",
         "Number of Control Points",
         "Isocentre (IEC-X)",
         "Isocentre (IEC-Y Start)",
         "Isocentre (IEC-Y Final)",
         "Isocentre (IEC-Z)",
+        "Couch travel (mm)",
     ]
     results = []
     for dcm_path in dcm_filepaths:
@@ -71,27 +77,53 @@ def read_dcm_plan_data(dcm_filepaths: npt.ArrayLike):
         )
         curr_result.append(int(df.FractionGroupSequence[0].NumberOfFractionsPlanned))
         curr_result.append(
-            float(
-                df.BeamSequence[0].BeamDescription.split(" ")[0].replace("Pitch=", "")
-            )
+            float(df.DoseReferenceSequence[0].TargetPrescriptionDose)
+            * 100
+            / float(df.DoseReferenceSequence[0].TargetPrescriptionDose)
+            * 100
         )
+        curr_result.append(
+            float(df.FractionGroupSequence[0].ReferencedBeamSequence[0].BeamMeterset)
+            * 60
+        )
+        curr_result.append(float(df.BeamSequence[0][0x300D, 0x1060].value))
         curr_result.append(
             float(
                 df.BeamSequence[0].BeamDescription.split(" ")[-1].replace("width=", "")
             )
         )
+        curr_result.append(
+            float(
+                df.BeamSequence[0]
+                .ControlPointSequence[1]
+                .BeamLimitingDevicePositionSequence[1]
+                .LeafJawPositions[0]
+            )
+            != float(
+                df.BeamSequence[0]
+                .ControlPointSequence[-1]
+                .BeamLimitingDevicePositionSequence[1]
+                .LeafJawPositions[0]
+            )
+        )
+        curr_result.append(float(df.BeamSequence[0][0x300D, 0x1040].value))
+        curr_result.append(float(df.BeamSequence[0][0x300D, 0x1080].value))
         curr_result.append(int(df.BeamSequence[0].NumberOfControlPoints))
         curr_result.append(
-            float(df.BeamSequence[0].ControlPointSequence[0].IsocenterPosition[0])
+            float(df.BeamSequence[0].ControlPointSequence[1].IsocenterPosition[0])
         )
         curr_result.append(
-            float(df.BeamSequence[0].ControlPointSequence[0].IsocenterPosition[2])
+            float(df.BeamSequence[0].ControlPointSequence[1].IsocenterPosition[2])
         )
         curr_result.append(
             float(df.BeamSequence[0].ControlPointSequence[-1].IsocenterPosition[2])
         )
         curr_result.append(
-            float(df.BeamSequence[0].ControlPointSequence[0].IsocenterPosition[1])
+            float(df.BeamSequence[0].ControlPointSequence[1].IsocenterPosition[1])
+        )
+        curr_result.append(
+            float(df.BeamSequence[0].ControlPointSequence[1].IsocenterPosition[2])
+            - float(df.BeamSequence[0].ControlPointSequence[-1].IsocenterPosition[2])
         )
         results.append(curr_result)
     return pd.DataFrame(results, columns=header)
