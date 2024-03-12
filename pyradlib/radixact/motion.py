@@ -17,6 +17,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import numpy.typing as npt
 import os
+import pandas as pd
 import re
 import xml.etree.ElementTree as et
 
@@ -90,7 +91,6 @@ def convert_motion_data_to_csv(xml_filepaths: npt.ArrayLike, csv_filepath: str):
         List of paths to XML files containing motion data.
     csv_filepath : str
         Path for CSV file to be written.
-
     """
     time, potential_diff, rigid_body, x_offset, y_offset, z_offset = read_motion_data(
         xml_filepaths
@@ -775,3 +775,188 @@ def plot_cohort_vector_displacement_probability(
         title,
         stacked_colour_histogram=stacked_colour_histogram,
     )
+
+
+def analyse_motion_data(fraction_xml_paths: npt.ArrayLike, all_fraction_label="all"):
+    """Analyse motion data spanning multiple fractions.
+
+    Parameters
+    ----------
+    fraction_xml_paths : array_like
+        List containing lists of *motionData.xml paths for each fraction of one or
+        more treatments.
+    all_fraction_label : str
+        Text to be used in fraction column to indicate summary of treatment results.
+
+    Returns
+    -------
+    results : Pandas DataFrame
+        A dataframe containing data extracted from the XML files.
+    """
+    results = []
+    time_combined = []
+    potential_diff_combined = []
+    rigid_body_combined = []
+    x_displacements = []
+    y_displacements = []
+    z_displacements = []
+    disp_time_combined = []
+    v_displacements = []
+    header = [
+        "Fraction",
+        "Data acquisition duration",
+        "Number of delivery fragments",
+        "Pause duration",
+        "Active duration",
+        "IEC-X mean",
+        "IEC-X standard deviation",
+        "IEC-X median",
+        "IEC-X range",
+        "IEC-Y mean",
+        "IEC-Y standard deviation",
+        "IEC-Y median",
+        "IEC-Y range",
+        "IEC-Z mean",
+        "IEC-Z standard deviation",
+        "IEC-Z median",
+        "IEC-Z range",
+        "Vector displacement mean",
+        "Vector displacement standard deviation",
+        "Vector displacement median",
+        "Vector displacement 80th percentile",
+        "Vector displacement 90th percentile",
+        "Vector displacement 95th percentile",
+        "Vector displacement maximum",
+        "Rigid body mean",
+        "Rigid body standard deviation",
+        "Rigid body median",
+        "Rigid body maximum",
+    ]
+    def extract_metrics(x_data, y_data, z_data, disp_data, rigid_body_data):
+        metrics = []
+        metrics.append(np.nanmean(x_data))
+        metrics.append(np.nanstd(x_data))
+        metrics.append(np.nanmedian(x_data))
+        metrics.append(np.nanmax(x_data) - np.nanmin(x_data))
+        metrics.append(np.nanmean(y_data))
+        metrics.append(np.nanstd(y_data))
+        metrics.append(np.nanmedian(y_data))
+        metrics.append(np.nanmax(y_data) - np.nanmin(y_data))
+        metrics.append(np.nanmean(z_data))
+        metrics.append(np.nanstd(z_data))
+        metrics.append(np.nanmedian(z_data))
+        metrics.append(np.nanmax(z_data) - np.nanmin(z_data))
+        metrics.append(np.nanmean(disp_data))
+        metrics.append(np.nanstd(disp_data))
+        metrics.append(np.nanmedian(disp_data))
+        metrics.append(np.percentile(disp_data, 80))
+        metrics.append(np.percentile(disp_data, 90))
+        metrics.append(np.percentile(disp_data, 95))
+        metrics.append(np.nanmax(disp_data))
+        metrics.append(np.nanmean(rigid_body_data))
+        metrics.append(np.nanstd(rigid_body_data))
+        metrics.append(np.nanmedian(rigid_body_data))
+        metrics.append(np.nanmax(rigid_body_data))
+        return metrics
+    for fraction in range(len(fraction_xml_paths)):
+        time, potential_diff, rigid_body, x_offset, y_offset, z_offset = (
+            read_motion_data(fraction_xml_paths[fraction])
+        )
+        time, potential_diff, rigid_body, x_offset, y_offset, z_offset, pauses = (
+            modify_motion_data(
+                time,
+                potential_diff,
+                rigid_body,
+                x_offset,
+                y_offset,
+                z_offset,
+                remove_duplicates=True,
+                remove_variable_pauses=False,
+            )
+        )
+        (
+            zero_time,
+            zero_potential_diff,
+            zero_rigid_body,
+            zero_x_offset,
+            zero_y_offset,
+            zero_z_offset,
+            zero_pauses,
+        ) = modify_motion_data(
+            time,
+            potential_diff,
+            rigid_body,
+            x_offset,
+            y_offset,
+            z_offset,
+            remove_variable_pauses=False,
+            zero_reference_point=True,
+        )
+        disp_time, disp = calculate_vector_displacements(
+            zero_time, zero_x_offset, zero_y_offset, zero_z_offset
+        )
+        time_combined = [*time_combined, *zero_time]
+        potential_diff_combined = [*potential_diff_combined, *potential_diff]
+        rigid_body_combined = [*rigid_body_combined, *rigid_body]
+        disp_time_combined = [*disp_time_combined, *disp_time]
+        x_displacements = [*x_displacements, *zero_x_offset]
+        y_displacements = [*y_displacements, *zero_y_offset]
+        z_displacements = [*z_displacements, *zero_z_offset]
+        v_displacements = [*v_displacements, *disp]
+        fraction_results = [fraction + 1]
+        fraction_results.append(time[-1] - time[0])
+        fraction_results.append(len(pauses) + 1)
+        pause_duration = 0
+        for pause in pauses:
+            pause_duration += pause[1] - pause[0]
+        fraction_results.append(pause_duration)
+        fraction_results.append((time[-1] - time[0]) - pause_duration)
+        fraction_results = fraction_results + extract_metrics(zero_x_offset, zero_y_offset, zero_z_offset, disp, rigid_body)
+        results.append(fraction_results)
+    return_result = pd.DataFrame(results, columns=header)
+    cumulative_result = [all_fraction_label]
+    cumulative_result.append(return_result[header[1]].sum())
+    cumulative_result.append(return_result[header[2]].sum())
+    cumulative_result.append(return_result[header[3]].sum())
+    cumulative_result.append(return_result[header[4]].sum())
+    cumulative_result = cumulative_result + extract_metrics(x_displacements, y_displacements, z_displacements, v_displacements, rigid_body_combined)
+    return_result.loc[len(return_result.index)] = cumulative_result
+    return return_result
+
+
+def analyse_patient_motion_data(patient_path: str):
+    """Analyse motion data contained within specific patient directory.
+
+    Parameters
+    ----------
+    patient_path : str
+        The path containing the *motionData.xml files to be plotted.
+
+    Notes
+    -----
+    The specified directory should correspond with those cached in C:/tomo/da/pts/URnumber/
+    when patient data is loaded within the Delivery Analysis tool.
+    """
+    motion_files = sorted(
+        glob.glob(os.path.join(patient_path, "*motionData.xml")),
+        key=lambda x: float(
+            re.findall("(\d+.\d+)", x.split("-")[-2] + "." + x.split("-")[-1])[0]
+        ),
+    )
+    if len(motion_files) == 0:
+        return
+    motion_paths = {}
+    for motion_file in motion_files:
+        id = (
+            "-".join(os.path.split(motion_file)[1].split("-")[0:-2])
+            + "-"
+            + os.path.split(motion_file)[1].split("-")[-2].zfill(2)
+        )
+        if id in motion_paths:
+            curr_list = motion_paths[id]
+            curr_list.append(motion_file)
+            motion_paths[id] = curr_list
+        else:
+            motion_paths[id] = [motion_file]
+    motion_paths = dict(sorted(motion_paths.items()))
+    return analyse_motion_data(list(motion_paths.values()))
