@@ -13,6 +13,7 @@ __license__ = "GPL3"
 # import required code
 import datetime
 import glob
+import matplotlib as mpl
 import matplotlib.pyplot as plt
 import numpy as np
 import numpy.typing as npt
@@ -225,6 +226,73 @@ def modify_motion_data(
         new_z_offset,
         pauses,
     )
+
+
+def patient_fraction_xml_lists(patient_path: str):
+    """Produces list containing lists of *motionData.xml paths for each fraction of one or
+    more treatments for a given patient.
+
+    Parameters
+    ----------
+    patient_path : str
+        The path containing the *motionData.xml files to be listed.
+
+    Notes
+    -----
+    The specified directory should correspond with those cached in C:/tomo/da/pts/URnumber/
+    when patient data is loaded within the Delivery Analysis tool.
+    """
+    motion_files = sorted(
+        glob.glob(os.path.join(patient_path, "*motionData.xml")),
+        key=lambda x: float(
+            re.findall("(\d+.\d+)", x.split("-")[-2] + "." + x.split("-")[-1])[0]
+        ),
+    )
+    if len(motion_files) == 0:
+        return []
+    motion_paths = {}
+    for motion_file in motion_files:
+        id = (
+            "-".join(os.path.split(motion_file)[1].split("-")[0:-2])
+            + "-"
+            + os.path.split(motion_file)[1].split("-")[-2].zfill(2)
+        )
+        if id in motion_paths:
+            curr_list = motion_paths[id]
+            curr_list.append(motion_file)
+            motion_paths[id] = curr_list
+        else:
+            motion_paths[id] = [motion_file]
+    motion_paths = dict(sorted(motion_paths.items()))
+    return list(motion_paths.values())
+
+
+def convert_patient_motion_data_to_csv(patient_path: str, csv_path: str):
+    fraction_xml_paths = patient_fraction_xml_lists(patient_path)
+    for fraction in range(len(fraction_xml_paths)):
+        time, potential_diff, rigid_body, x_offset, y_offset, z_offset = (
+            read_motion_data(fraction_xml_paths[fraction])
+        )
+        time, potential_diff, rigid_body, x_offset, y_offset, z_offset, pauses = (
+            modify_motion_data(
+                time,
+                potential_diff,
+                rigid_body,
+                x_offset,
+                y_offset,
+                z_offset,
+                remove_duplicates=True,
+                remove_variable_pauses=False,
+                # replacement_pause_length =
+                zero_reference_point=True,
+            )
+        )
+        np.savetxt(
+            os.path.join(csv_path, "Fraction " + str(fraction + 1) + ".csv"),
+            np.column_stack((time, x_offset, y_offset, z_offset)),
+            delimiter=",",
+            header="Time (s), IEC-X (mm), IEC-Y (mm), IEC-Z (mm)",
+        )
 
 
 def calculate_vector_displacements(
@@ -451,8 +519,8 @@ def plot_motion_data(
     plt.savefig(png_filepath, bbox_inches="tight")
 
 
-def plot_patient_data(
-    patient_path: str, png_path: str, title: str, zero_reference_point: bool = False
+def plot_patient_motion_data(
+    patient_path: str, png_filepath: str, title: str, zero_reference_point: bool = False
 ):
     """Plot motion data contained within specific patient directory.
 
@@ -474,34 +542,14 @@ def plot_patient_data(
     The specified directory should correspond with those cached in C:/tomo/da/pts/URnumber/
     when patient data is loaded within the Delivery Analysis tool.
     """
-    motion_files = sorted(
-        glob.glob(os.path.join(patient_path, "*motionData.xml")),
-        key=lambda x: float(
-            re.findall("(\d+.\d+)", x.split("-")[-2] + "." + x.split("-")[-1])[0]
-        ),
-    )
-    if len(motion_files) == 0:
-        return
-    motion_paths = {}
-    for motion_file in motion_files:
-        id = (
-            "-".join(os.path.split(motion_file)[1].split("-")[0:-2])
-            + "-"
-            + os.path.split(motion_file)[1].split("-")[-2].zfill(2)
+    motion_paths = patient_fraction_xml_lists(patient_path)
+    if len(motion_paths) > 0:
+        plot_motion_data(
+            motion_paths,
+            png_filepath,
+            title,
+            zero_reference_point=zero_reference_point,
         )
-        if id in motion_paths:
-            curr_list = motion_paths[id]
-            curr_list.append(motion_file)
-            motion_paths[id] = curr_list
-        else:
-            motion_paths[id] = [motion_file]
-    motion_paths = dict(sorted(motion_paths.items()))
-    plot_motion_data(
-        list(motion_paths.values()),
-        png_path,
-        title,
-        zero_reference_point=zero_reference_point,
-    )
 
 
 def has_motion_data(patient_path: str):
@@ -698,28 +746,9 @@ def plot_patient_vector_displacement_probability(
     The specified directory should correspond with those cached in C:/tomo/da/pts/URnumber/
     when patient data is loaded within the Delivery Analysis tool.
     """
-    motion_files = sorted(
-        glob.glob(os.path.join(patient_path, "*motionData.xml")),
-        key=lambda x: float(
-            re.findall("(\d+.\d+)", x.split("-")[-2] + "." + x.split("-")[-1])[0]
-        ),
-    )
-    motion_paths = {}
-    for motion_file in motion_files:
-        id = (
-            "-".join(os.path.split(motion_file)[1].split("-")[0:-2])
-            + "-"
-            + os.path.split(motion_file)[1].split("-")[-2].zfill(2)
-        )
-        if id in motion_paths:
-            curr_list = motion_paths[id]
-            curr_list.append(motion_file)
-            motion_paths[id] = curr_list
-        else:
-            motion_paths[id] = [motion_file]
-    motion_paths = dict(sorted(motion_paths.items()))
+    motion_paths = patient_fraction_xml_lists(patient_path)
     plot_vector_displacement_probability(
-        list(motion_paths.values()),
+        motion_paths,
         png_path,
         title,
         stacked_colour_histogram=stacked_colour_histogram,
@@ -832,6 +861,7 @@ def analyse_motion_data(fraction_xml_paths: npt.ArrayLike, all_fraction_label="a
         "Rigid body median",
         "Rigid body maximum",
     ]
+
     def extract_metrics(x_data, y_data, z_data, disp_data, rigid_body_data):
         metrics = []
         metrics.append(np.nanmean(x_data))
@@ -858,6 +888,7 @@ def analyse_motion_data(fraction_xml_paths: npt.ArrayLike, all_fraction_label="a
         metrics.append(np.nanmedian(rigid_body_data))
         metrics.append(np.nanmax(rigid_body_data))
         return metrics
+
     for fraction in range(len(fraction_xml_paths)):
         time, potential_diff, rigid_body, x_offset, y_offset, z_offset = (
             read_motion_data(fraction_xml_paths[fraction])
@@ -911,7 +942,9 @@ def analyse_motion_data(fraction_xml_paths: npt.ArrayLike, all_fraction_label="a
             pause_duration += pause[1] - pause[0]
         fraction_results.append(pause_duration)
         fraction_results.append((time[-1] - time[0]) - pause_duration)
-        fraction_results = fraction_results + extract_metrics(zero_x_offset, zero_y_offset, zero_z_offset, disp, rigid_body)
+        fraction_results = fraction_results + extract_metrics(
+            zero_x_offset, zero_y_offset, zero_z_offset, disp, rigid_body
+        )
         results.append(fraction_results)
     return_result = pd.DataFrame(results, columns=header)
     cumulative_result = [all_fraction_label]
@@ -919,7 +952,13 @@ def analyse_motion_data(fraction_xml_paths: npt.ArrayLike, all_fraction_label="a
     cumulative_result.append(return_result[header[2]].sum())
     cumulative_result.append(return_result[header[3]].sum())
     cumulative_result.append(return_result[header[4]].sum())
-    cumulative_result = cumulative_result + extract_metrics(x_displacements, y_displacements, z_displacements, v_displacements, rigid_body_combined)
+    cumulative_result = cumulative_result + extract_metrics(
+        x_displacements,
+        y_displacements,
+        z_displacements,
+        v_displacements,
+        rigid_body_combined,
+    )
     return_result.loc[len(return_result.index)] = cumulative_result
     return return_result
 
@@ -937,26 +976,5 @@ def analyse_patient_motion_data(patient_path: str):
     The specified directory should correspond with those cached in C:/tomo/da/pts/URnumber/
     when patient data is loaded within the Delivery Analysis tool.
     """
-    motion_files = sorted(
-        glob.glob(os.path.join(patient_path, "*motionData.xml")),
-        key=lambda x: float(
-            re.findall("(\d+.\d+)", x.split("-")[-2] + "." + x.split("-")[-1])[0]
-        ),
-    )
-    if len(motion_files) == 0:
-        return
-    motion_paths = {}
-    for motion_file in motion_files:
-        id = (
-            "-".join(os.path.split(motion_file)[1].split("-")[0:-2])
-            + "-"
-            + os.path.split(motion_file)[1].split("-")[-2].zfill(2)
-        )
-        if id in motion_paths:
-            curr_list = motion_paths[id]
-            curr_list.append(motion_file)
-            motion_paths[id] = curr_list
-        else:
-            motion_paths[id] = [motion_file]
-    motion_paths = dict(sorted(motion_paths.items()))
-    return analyse_motion_data(list(motion_paths.values()))
+    motion_paths = patient_fraction_xml_lists(patient_path)
+    return analyse_motion_data(motion_paths)
