@@ -559,6 +559,24 @@ def plot_patient_motion_data_boxplot(
     zero_reference_point: bool = True,
     type="classical",
 ):
+    """Plot boxplot of motion data contained within specific patient directory.
+
+    Parameters
+    ----------
+    patient_path : str
+        The path containing the *motionData.xml files to be plotted.
+    png_filepath : str
+        Path for PNG file to be written.
+    title : str
+        Title text to use for figure.
+    zero_reference_point : bool, optional
+        Flag indicating whether coordinates are shifted for starting positions, i.e.
+        whether X, Y and Z are shifted to 0 at time 0, and following any pause (default
+        is False).
+    type : str, optional
+        Type of boxplot to produce, possible values are "classical" and "functional" 
+        (default is "classical").
+    """
     motion_paths = patient_fraction_xml_lists(patient_path)
     if len(motion_paths) == 0:
         return
