@@ -552,6 +552,103 @@ def plot_patient_motion_data(
         )
 
 
+def plot_patient_motion_data_boxplot(
+    patient_path: str,
+    png_filepath: str,
+    title: str,
+    zero_reference_point: bool = True,
+    type="classical",
+):
+    motion_paths = patient_fraction_xml_lists(patient_path)
+    if len(motion_paths) == 0:
+        return
+    fig, axs = plt.subplots(
+        ncols=1,
+        nrows=3,
+        sharex=True,
+        sharey=True,
+        gridspec_kw={"hspace": 0, "wspace": 0},
+        constrained_layout=True,
+        figsize=(4, 7),
+    )
+    all_x_offset = []
+    all_y_offset = []
+    all_z_offset = []
+    for fraction in range(len(motion_paths)):
+        time, potential_diff, rigid_body, x_offset, y_offset, z_offset = (
+            read_motion_data(motion_paths[fraction])
+        )
+        time, potential_diff, rigid_body, x_offset, y_offset, z_offset, pauses = (
+            modify_motion_data(
+                time,
+                potential_diff,
+                rigid_body,
+                x_offset,
+                y_offset,
+                z_offset,
+                remove_duplicates=True,
+                remove_variable_pauses=True,
+                replacement_pause_length=0,
+                zero_reference_point=True,
+            )
+        )
+        all_x_offset.append(x_offset[~np.isnan(x_offset)])
+        all_y_offset.append(y_offset[~np.isnan(y_offset)])
+        all_z_offset.append(z_offset[~np.isnan(z_offset)])
+    if type == "classical":
+        axs[0].boxplot(all_x_offset)
+        axs[1].boxplot(all_y_offset)
+        axs[2].boxplot(all_z_offset)
+    if type == "functional":
+        plots = []
+        for level in [100, 50]:
+            color = mpl.colormaps["Blues"](int(25.6 + ((100 - level) * 2)))
+            plots.append(
+                axs[0].fill_between(
+                    range(len(all_x_offset)),
+                    [np.percentile(data, level) for data in all_x_offset],
+                    [np.percentile(data, 100 - level) for data in all_x_offset],
+                    color=color,
+                )
+            )
+            axs[1].fill_between(
+                range(len(all_y_offset)),
+                [np.percentile(data, level) for data in all_y_offset],
+                [np.percentile(data, 100 - level) for data in all_y_offset],
+                color=color,
+            )
+            axs[2].fill_between(
+                range(len(all_z_offset)),
+                [np.percentile(data, level) for data in all_z_offset],
+                [np.percentile(data, 100 - level) for data in all_z_offset],
+                color=color,
+            )
+        (l1,) = axs[0].plot(
+            range(len(all_x_offset)),
+            [np.median(data) for data in all_x_offset],
+            color=mpl.colormaps["Blues"](226),
+        )
+        plots.append(l1)
+        axs[1].plot(
+            range(len(all_x_offset)),
+            [np.median(data) for data in all_y_offset],
+            color=mpl.colormaps["Blues"](226),
+        )
+        axs[2].plot(
+            range(len(all_x_offset)),
+            [np.median(data) for data in all_z_offset],
+            color=mpl.colormaps["Blues"](226),
+        )
+    axs[0].set_title("IEC-X", y=1.0, pad=-14)
+    axs[1].set_title("IEC-Y", y=1.0, pad=-14)
+    axs[2].set_title("IEC-Z", y=1.0, pad=-14)
+    axs[2].tick_params(labelbottom=False)
+    fig.supxlabel("Fraction")
+    fig.supylabel("Displacement (mm)")
+    fig.suptitle(title)
+    plt.savefig(png_filepath, bbox_inches="tight")
+
+
 def has_motion_data(patient_path: str):
     """Check whether motion data exists within specific patient directory.
 
