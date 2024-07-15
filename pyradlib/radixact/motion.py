@@ -574,7 +574,7 @@ def plot_patient_motion_data_boxplot(
         whether X, Y and Z are shifted to 0 at time 0, and following any pause (default
         is False).
     type : str, optional
-        Type of boxplot to produce, possible values are "classical" and "functional" 
+        Type of boxplot to produce, possible values are "classical" and "functional"
         (default is "classical").
     """
     motion_paths = patient_fraction_xml_lists(patient_path)
@@ -624,21 +624,21 @@ def plot_patient_motion_data_boxplot(
             plots.append(
                 axs[0].fill_between(
                     range(len(all_x_offset)),
-                    [np.percentile(data, level) for data in all_x_offset],
-                    [np.percentile(data, 100 - level) for data in all_x_offset],
+                    [np.percentile(data, 50 + (level / 2)) for data in all_x_offset],
+                    [np.percentile(data, 50 - (level / 2)) for data in all_x_offset],
                     color=color,
                 )
             )
             axs[1].fill_between(
                 range(len(all_y_offset)),
-                [np.percentile(data, level) for data in all_y_offset],
-                [np.percentile(data, 100 - level) for data in all_y_offset],
+                [np.percentile(data, 50 + (level / 2)) for data in all_y_offset],
+                [np.percentile(data, 50 - (level / 2)) for data in all_y_offset],
                 color=color,
             )
             axs[2].fill_between(
                 range(len(all_z_offset)),
-                [np.percentile(data, level) for data in all_z_offset],
-                [np.percentile(data, 100 - level) for data in all_z_offset],
+                [np.percentile(data, 50 + (level / 2)) for data in all_z_offset],
+                [np.percentile(data, 50 - (level / 2)) for data in all_z_offset],
                 color=color,
             )
         (l1,) = axs[0].plot(
@@ -656,6 +656,13 @@ def plot_patient_motion_data_boxplot(
             range(len(all_x_offset)),
             [np.median(data) for data in all_z_offset],
             color=mpl.colormaps["Blues"](226),
+        )
+        fig.legend(
+            plots,
+            ["Range", "IQR", "Median"],
+            loc="center right",
+            fancybox=True,
+            bbox_to_anchor=(1.05, 1),
         )
     axs[0].set_title("IEC-X", y=1.0, pad=-14)
     axs[1].set_title("IEC-Y", y=1.0, pad=-14)
