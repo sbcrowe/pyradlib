@@ -955,6 +955,8 @@ def analyse_motion_data(fraction_xml_paths: npt.ArrayLike, all_fraction_label="a
     v_displacements = []
     header = [
         "Fraction",
+        "Date",
+        "Time",
         "Data acquisition duration",
         "Number of delivery fragments",
         "Pause duration",
@@ -1015,6 +1017,8 @@ def analyse_motion_data(fraction_xml_paths: npt.ArrayLike, all_fraction_label="a
         time, potential_diff, rigid_body, x_offset, y_offset, z_offset = (
             read_motion_data(fraction_xml_paths[fraction])
         )
+        str_date = datetime.datetime.fromtimestamp(time[0]).strftime("%d/%m/%Y")
+        str_time = datetime.datetime.fromtimestamp(time[0]).strftime("%H:%M:%S")
         time, potential_diff, rigid_body, x_offset, y_offset, z_offset, pauses = (
             modify_motion_data(
                 time,
@@ -1057,6 +1061,8 @@ def analyse_motion_data(fraction_xml_paths: npt.ArrayLike, all_fraction_label="a
         z_displacements = [*z_displacements, *zero_z_offset]
         v_displacements = [*v_displacements, *disp]
         fraction_results = [fraction + 1]
+        fraction_results.append(str_date)
+        fraction_results.append(str_time)
         fraction_results.append(time[-1] - time[0])
         fraction_results.append(len(pauses) + 1)
         pause_duration = 0
@@ -1070,10 +1076,12 @@ def analyse_motion_data(fraction_xml_paths: npt.ArrayLike, all_fraction_label="a
         results.append(fraction_results)
     return_result = pd.DataFrame(results, columns=header)
     cumulative_result = [all_fraction_label]
-    cumulative_result.append(return_result[header[1]].sum())
-    cumulative_result.append(return_result[header[2]].sum())
+    cumulative_result.append("N/A")
+    cumulative_result.append("N/A")
     cumulative_result.append(return_result[header[3]].sum())
     cumulative_result.append(return_result[header[4]].sum())
+    cumulative_result.append(return_result[header[5]].sum())
+    cumulative_result.append(return_result[header[6]].sum())
     cumulative_result = cumulative_result + extract_metrics(
         x_displacements,
         y_displacements,
