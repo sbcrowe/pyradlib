@@ -1,5 +1,5 @@
 # Radixact
-This subpackage provides functionality for the analysis of data produced by the Radixact treatment delivery system, including data cached within the Delivery Analysis software provided by Accuray.
+This subpackage provides functionality for the analysis of data produced by the Radixact treatment delivery system, including data archived using the Patient Data Extractor software, or cached within the Delivery Analysis software, both provided by Accuray.
 
 ## Displacement metrics and figures
 The displacement distribution metrics and figures implemented have been taken from or otherwise inspired by the articles below.
