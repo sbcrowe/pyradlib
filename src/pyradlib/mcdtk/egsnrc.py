@@ -1,16 +1,106 @@
 # -*- coding: utf-8 -*-
-""" EGSnrc module.
+"""EGSnrc module.
 
 This module provides EGSnrc file handling functionality.
 """
 
+# authorship information
+__author__ = "Scott Crowe"
+__email__ = "sb.crowe@gmail.com"
+__credits__ = []
+__license__ = "GPL3"
+
+# import required code
+import numpy as np
+from numpy.typing import ArrayLike
+
+
+def read_egsphant(path: str):
+    """Read content of EGSnrc EGSPHANT files.
+
+    Parameters
+    ----------
+    path : str
+        Path of file containing EGSPHANT data.
+
+    Returns
+    -------
+    material_names : dict
+        Dictionary containing material names and associated media assignment numbers.
+    x_boundaries, y_boundaries, z_boundaries : list
+        Phantom geometry voxel boundary coordinates.
+    media, densities : array_like
+        Phantom geometry material assignments and density values.
+    """
+    with open(path) as f:
+        num_materials = int(f.readline().strip())
+        material_names = {}
+        for i in range(num_materials):
+            material_names[i + 1] = f.readline().strip()
+        f.readline()
+        num_voxels = [int(x) for x in f.readline().strip().split()]
+        x_boundaries = [float(x) for x in f.readline().strip().split()]
+        y_boundaries = [float(y) for y in f.readline().strip().split()]
+        z_boundaries = [float(z) for z in f.readline().strip().split()]
+        media = np.zeros((num_voxels[2], num_voxels[1], num_voxels[0]))
+        for k in range(num_voxels[2]):
+            for j in range(num_voxels[1]):
+                media[k, j] = [int(x) for x in f.readline().strip()]
+            f.readline()
+        densities = np.zeros((num_voxels[2], num_voxels[1], num_voxels[0]))
+        for k in range(num_voxels[2]):
+            for j in range(num_voxels[1]):
+                densities[k, j] = [float(x) for x in f.readline().strip().split()]
+            f.readline()
+        return (
+            material_names,
+            x_boundaries,
+            y_boundaries,
+            z_boundaries,
+            media,
+            densities,
+        )
+
+
+# egsphant file write
+def write_egsphant(
+    path: str,
+    material_names: dict[int, str],
+    x_boundaries: list[float],
+    y_boundaries: list[float],
+    z_boundaries: list[float],
+    media: ArrayLike,
+    densities: ArrayLike,
+):
+    with open(path, "w") as f:
+        num_materials = len(material_names)
+        f.write(str(num_materials) + "\n")
+        for material_name in list(material_names.values()):
+            f.write(material_name + "\n")
+        f.write(" ".join(["1.00000000"] * 6) + "\n")
+        num_x = len(x_boundaries) - 1
+        num_y = len(y_boundaries) - 1
+        num_z = len(z_boundaries) - 1
+        f.write(" " + str(num_x) + " " + str(num_y) + " " + str(num_z) + "\n")
+        f.write(" ".join([str(x) for x in x_boundaries]) + "\n")
+        f.write(" ".join([str(y) for y in y_boundaries]) + "\n")
+        f.write(" ".join([str(z) for z in z_boundaries]) + "\n")
+        for k in range(num_z):
+            for j in range(num_y):
+                f.write("".join([str(int(x)) for x in media[k, j]]) + "\n")
+            f.write("\n")
+        for k in range(num_z):
+            for j in range(num_y):
+                f.write(" ".join([str(x) for x in densities[k, j]]) + "\n")
+            f.write("\n")
+
 
 def transport_parameter_text(
-    electron_energy_cutoff=0.521,
-    photon_energy_cutoff=0.01,
-    exact_boundary_crossing=True,
-    low_energy_simulation=False,
-):
+    electron_energy_cutoff: float = 0.521,
+    photon_energy_cutoff: float = 0.01,
+    exact_boundary_crossing: bool = True,
+    low_energy_simulation: bool = False,
+) -> list[str]:
     """Produce EGSnrc transport text, for inclusion in EGSnrc input files.
 
     Parameters
