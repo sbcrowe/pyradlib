@@ -18,7 +18,9 @@ import numpy as np
 import numpy.typing as npt
 import os
 import pandas as pd
+import pydicom
 import xml.etree.ElementTree as et
+from datetime import datetime
 from scipy import ndimage
 
 # define global variables
@@ -32,8 +34,11 @@ class Sinogram:
         self,
         data: npt.ArrayLike,
         projections: npt.ArrayLike = None,
+        fragment_start_projections: npt.ArrayLike = None,
         gantry_angles: npt.ArrayLike = None,
-        times: npt.ArrayLike = None
+        times: npt.ArrayLike = None,
+        fragment_start_datetimes: datetime = None,
+        fragment_durations: npt.ArrayLike = None,
     ):
         """Initialises an object corresponding to a sinogram.
 
@@ -43,15 +48,56 @@ class Sinogram:
             Leaf open times or detector channel signal data.
         projections : array_like, optional
             Projection numbers for the sinogram data.
+        fragment_start_projections : array_like, optional
+            Projection numbers of the start of each beam delivery fragment.
         gantry_angles : array_like, optional
-            Gantry angles corresponding to each projection.
+            Gantry angles corresponding to start of each projection.
+        times : array_like, optional
+            Times, in sec, corresponding to start of each projection,
+            relative to start of initial fragment of session.
+        fragment_start_datetimes : array_like, optional
+            Date and time of the start of each beam delivery fragment.
+        fragment_durations : array_like, optional
+            The duration, in sec, of each beam delivery fragment.
         """
         self.data = data
         self.projections = projections
+        self.fragment_start_projections = fragment_start_projections
         self.gantry_angles = gantry_angles
         self.times = times
+        self.fragment_start_datetimes = fragment_start_datetimes
+        self.fragment_durations = fragment_durations
         if self.projections is None:
             self.projections = np.array(range(len(data)))
+
+    @classmethod
+    def from_dcm(cls, path):
+        """Reads planned sinogram from a DICOM RTPLAN file.
+
+        Parameters
+        ----------
+        path : str
+            Path to the .dcm file.
+
+        Returns
+        -------
+        Sinogram
+            The DICOM RTPLAN file is returned as a two-dimensional numpy array
+            encapsulated with helper functions.
+        """
+        ds = pydicom.dcmread(path)
+        gantry_angles = []
+        sinogram_data = []
+        for cp in ds.BeamSequence[0].ControlPointSequence:
+            if (0x300D, 0x10A7) in cp:
+                gantry_angles += [float(cp.GantryAngle)]
+                sinogram_data += [
+                    [
+                        float(x)
+                        for x in cp[0x300D, 0x10A7].value.decode("utf-8").split("\\")
+                    ]
+                ]
+        return cls(np.array(sinogram_data), gantry_angles=np.array(gantry_angles))
 
     @classmethod
     def from_det(cls, path, clip: bool = True, flip: bool = True):
@@ -92,19 +138,21 @@ class Sinogram:
         return cls(data)
 
     @classmethod
-    def from_dplan(cls, path: str):
+    def from_dplan(cls, path: str, timing_path: str = None):
         """Reads planned or telemetry sinogram from a .dplan file.
 
         Parameters
         ----------
         path : str
             Path to the .dplan file.
+        timing_path : str, optional
+            Path to the telemetry timing .dat file.
 
         Returns
         -------
         Sinogram
-            The det file is returned as a two-dimensional numpy array encapsulated
-            with helper functions.
+            The dplan file is returned as a two-dimensional numpy array encapsulated
+            with helper functions, with timing data if dat file is specified.
 
         Notes
         -----
@@ -117,7 +165,7 @@ class Sinogram:
         with open(path) as text_file:
             dplan_text = text_file.read()
         dplan_text = dplan_text.split("\n")
-        seconds_per_tau = float(dplan_text[4].replace("fragment.secondsPerTau=",""))
+        seconds_per_tau = float(dplan_text[4].replace("fragment.secondsPerTau=", ""))
         start_tau = int(dplan_text[5].replace("fragment.startTau=", ""))
         end_tau = int(dplan_text[6].replace("fragment.endTau=", ""))
         tau_diff = end_tau - start_tau
@@ -138,9 +186,55 @@ class Sinogram:
                     data[int(tau[0]) - 1, index] = tau[1] - tau[0]
                 offset = offset + count
         projections = np.arange(start_tau, end_tau, 1)
-        gantry_angles = (projections % 51) * (360 / 51)
-        time = np.array(range(len(projections))) * seconds_per_tau
-        return cls(data, projections, gantry_angles, time)
+        # calculate gantry, assuming projection 1 is centred on gantry 0
+        gantry_angles = ((projections % 51) * (360 / 51) - (180 / 51)) % 360
+        times = np.array(range(len(projections))) * seconds_per_tau
+        if timing_path is not None:
+            with open(timing_path) as timing_path_text_file:
+                timing_text = timing_path_text_file.read()
+            timing_text = timing_text.split("\n")
+            fragment_start_timestamps = np.array(
+                [
+                    x + y / 1000000
+                    for x, y in zip(
+                        list(map(int, timing_text[3].split(","))),
+                        list(map(int, timing_text[4].split(","))),
+                    )
+                    if x > 0
+                ]
+            )
+            fragment_start_datetimes = [
+                datetime.fromtimestamp(x) for x in fragment_start_timestamps
+            ]
+            fragment_breaks = np.array(
+                [x for x in list(map(float, timing_text[5].split(","))) if x > 0]
+            )
+            fragment_durations = np.array(
+                [
+                    (y - x) * seconds_per_tau
+                    for x, y in zip(
+                        list(map(float, timing_text[5].split(","))),
+                        list(map(float, timing_text[6].split(","))),
+                    )
+                    if x > 0
+                ]
+            )
+            times += np.piecewise(
+                projections,
+                [projections >= fragment_break for fragment_break in fragment_breaks],
+                fragment_start_timestamps
+                - fragment_start_timestamps[0]
+                - (fragment_breaks - fragment_breaks[0]) * seconds_per_tau,
+            )
+        return cls(
+            data,
+            projections=projections,
+            fragment_start_projections=fragment_breaks,
+            gantry_angles=gantry_angles,
+            times=times,
+            fragment_start_datetimes=fragment_start_datetimes,
+            fragment_durations=fragment_durations,
+        )
 
     @classmethod
     def from_bin(cls, path: str, channels: int = 64):
@@ -171,7 +265,7 @@ class Sinogram:
         header = np.fromfile(
             path, dtype=np.float32, offset=12, count=num_projections * 4
         ).reshape((num_projections, 4))
-        gantry_angles = header[:, 0]
+        gantry_angles = (header[:, 0] - (180 / 51)) % 360
         couch_positions = header[:, 3]
         data = np.fromfile(
             path, dtype=np.float32, offset=12 + num_projections * 4 * 4
@@ -202,13 +296,15 @@ class Sinogram:
             data = data[:, 0:576]
             data = np.flip(data, axis=1)
         projections = np.loadtxt(path, delimiter=",", skiprows=1)[:, 0]
-        gantry_angles = np.loadtxt(path, delimiter=",", skiprows=1)[:, 1]
-        return cls(data, projections, gantry_angles)
+        gantry_angles = (
+            np.loadtxt(path, delimiter=",", skiprows=1)[:, 1] - (180 / 51)
+        ) % 360
+        return cls(data, projections=projections, gantry_angles=gantry_angles)
 
     def __add__(self, other):
         if not isinstance(other, type(self)):
             raise TypeError("Unsupported operand type for +")
-        return type(self)(self.data + other.data, np.copy(self.projections))
+        return type(self)(self.data + other.data, projections=np.copy(self.projections))
 
     def __len__(self):
         return len(self.data)
@@ -216,15 +312,19 @@ class Sinogram:
     def __sub__(self, other):
         if not isinstance(other, type(self)):
             raise TypeError("Unsupported operand type for -")
-        return type(self)(self.data - other.data, np.copy(self.projections))
+        return type(self)(self.data - other.data, projections=np.copy(self.projections))
 
     def adapt_to_motion(self, motion):
+        # TODO implement this function
+        raise NotImplementedError("Motion adaptation in development")
         adapted_data = np.copy(self.data)
         # define gantry angles matching motion
         # calculate beams eye view motion
         # for all points in sinogram, calculate shift
         return Sinogram(
-            adapted_data, np.copy(self.projections), np.copy(self.gantry_angles)
+            adapted_data,
+            projections=np.copy(self.projections),
+            gantry_angles=np.copy(self.gantry_angles),
         )
 
     def metrics(self):
@@ -310,6 +410,44 @@ class Sinogram:
             delimiter=",",
             header=",".join(header_row),
         )
+
+    def to_dcm(self, path, template_path):
+        """Writes sinogram leaf open times to DICOM RTPLAN file, using an existing
+        DICOM RTPLAN file as a template.
+
+        Parameters
+        ----------
+        path : str
+            Path of the DICOM RTPLAN file to be written.
+        template_path : str
+            Path of the DICOM RTPLAN file to be used as a template.
+
+        Notes
+        -----
+        Depending on how the DICOM RTPLAN has been collected, e.g., either exported
+        from the TPS or collected from a PDE or delivery analysis cache, the first
+        control point may or may not have associated leaf open times.
+        """
+        ds = pydicom.dcmread(template_path)
+        if len(self.data) == len(ds.BeamSequence[0].ControlPointSequence) - 1:
+            for cp, lot in zip(
+                ds.BeamSequence[0].ControlPointSequence[0:-1], self.data
+            ):
+                cp[0x300D, 0x10A7].value = "//".join([str(x) for x in lot]).encode(
+                    "utf-8"
+                )
+        elif len(self.data) == len(ds.BeamSequence[0].ControlPointSequence) - 2:
+            for cp, lot in zip(
+                ds.BeamSequence[0].ControlPointSequence[1:-1], self.data
+            ):
+                cp[0x300D, 0x10A7].value = "//".join([str(x) for x in lot]).encode(
+                    "utf-8"
+                )
+        else:
+            raise RuntimeError(
+                "Template DICOM RTPLAN has incorrect number of control points"
+            )
+        ds.save_as(path)
 
     def to_png(self, path, title=None):
         """Writes sinogram leaf open times or channel signal data to PNG file.
