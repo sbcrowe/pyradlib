@@ -14,20 +14,21 @@ __license__ = "GPL3"
 import glob
 import logging
 import os
-import polars as pl
-import pydicom
 import xml.etree.ElementTree as et
 from functools import cached_property
-from pyradlib.radixact.sinogram import Sinogram
-from pyradlib.radixact.motion import SynchronyMotion
-from pyradlib.radixact.plan import PlanSettings
+
+import polars as pl
+import pydicom
+
+from pyradlib.radixact.motion import RadixactSynchronyMotion
+from pyradlib.radixact.plan import RadixactPlanSettings
+from pyradlib.radixact.sinogram import RadixactSinogram
 from pyradlib.radixact.timing import RadixactTiming
 
 logger = logging.getLogger(__name__)
 
 
 class RadixactDataset:
-
     # region Constructors
 
     def __init__(self, label: str = None):
@@ -130,7 +131,9 @@ class RadixactDataset:
         else:
             for detector_sinogram_file in detector_sinogram_files:
                 logger.debug(f"Loading {detector_sinogram_file}")
-                detector_sinograms.append(Sinogram.from_det(detector_sinogram_file))
+                detector_sinograms.append(
+                    RadixactSinogram.from_det(detector_sinogram_file)
+                )
             logger.info(f"Loaded {len(detector_sinograms)} detector sinogram files")
             return detector_sinograms
 
@@ -156,7 +159,7 @@ class RadixactDataset:
             return dose_distributions
 
     @cached_property
-    def motion(self) -> SynchronyMotion:
+    def motion(self) -> RadixactSynchronyMotion:
         if len(self.motions) == 0:
             return None
         else:
@@ -165,7 +168,7 @@ class RadixactDataset:
             return result
 
     @cached_property
-    def motions(self) -> list[SynchronyMotion]:
+    def motions(self) -> list[RadixactSynchronyMotion]:
         # TODO Potentially include orig_path or curr_path.split("-")[-2] as fraction number
         # or include entire UID from orig_path or curr_path.
         motions = []
@@ -176,7 +179,7 @@ class RadixactDataset:
         else:
             for motion_file in motion_files:
                 logger.debug(f"Loading {motion_file}")
-                motions.append(SynchronyMotion.from_xml(motion_file))
+                motions.append(RadixactSynchronyMotion.from_xml(motion_file))
             logger.info(f"Loaded {len(motions)} motion data files")
             return motions
 
@@ -210,7 +213,9 @@ class RadixactDataset:
         else:
             for plan_detail_file in plan_detail_files:
                 logger.debug(f"Loading {plan_detail_file}")
-                plan_details.append(PlanSettings.from_plan_settings(plan_detail_file))
+                plan_details.append(
+                    RadixactPlanSettings.from_plan_settings(plan_detail_file)
+                )
             logger.info(f"Loaded {len(plan_details)} plan detail files")
             return plan_details
 
@@ -226,12 +231,14 @@ class RadixactDataset:
         else:
             for plan_setting_file in plan_setting_files:
                 logger.debug(f"Loading {plan_setting_file}")
-                plan_settings.append(PlanSettings.from_plan_settings(plan_setting_file))
+                plan_settings.append(
+                    RadixactPlanSettings.from_plan_settings(plan_setting_file)
+                )
             logger.info(f"Loaded {len(plan_settings)} plan setting files")
             return plan_settings
 
     @cached_property
-    def plan_sinograms(self) -> Sinogram:
+    def plan_sinograms(self) -> RadixactSinogram:
         # TODO Potentially include orig_path or curr_path.split("~")[-2] as fraction number
         # or include entire UID from orig_path or curr_path.
         plan_sinograms = []
@@ -244,7 +251,7 @@ class RadixactDataset:
         else:
             for plan_sinogram_file in plan_sinogram_files:
                 logger.debug(f"Loading {plan_sinogram_file}")
-                plan_sinograms.append(Sinogram.from_dplan(plan_sinogram_file))
+                plan_sinograms.append(RadixactSinogram.from_dplan(plan_sinogram_file))
             logger.info(f"Loaded {len(plan_sinograms)} plan sinogram files")
             return plan_sinograms
 
@@ -284,7 +291,7 @@ class RadixactDataset:
             return structure_sets
 
     @cached_property
-    def telemetry_sinograms(self) -> list[Sinogram]:
+    def telemetry_sinograms(self) -> list[RadixactSinogram]:
         # TODO Potentially include orig_path or curr_path.split("-")[-3] as plan uid,
         # [-2] as fraction and [1] as fragment, or include entire UID from orig_path
         # or curr_path.
@@ -318,14 +325,14 @@ class RadixactDataset:
                 if len(telemetry_sinogram_files) == len(self.telemetry_timings):
                     logger.debug(f"Loading {telemetry_sinogram_file}, applying timing")
                     telemetry_sinograms.append(
-                        Sinogram.from_dplan(
+                        RadixactSinogram.from_dplan(
                             telemetry_sinogram_file, uid
                         ).add_timestamps(telemetry_timing_dict[uid])
                     )
                 else:
                     logger.debug(f"Loading {telemetry_sinogram_file}")
                     telemetry_sinograms.append(
-                        Sinogram.from_dplan(telemetry_sinogram_file, uid)
+                        RadixactSinogram.from_dplan(telemetry_sinogram_file, uid)
                     )
             return telemetry_sinograms
 
