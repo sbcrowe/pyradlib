@@ -70,7 +70,7 @@ Subdirectories ordinarily included in the ``C:\cdms\`` directory include:
 Files that may be in the ``C:\tomo\da\pts\*\`` directory include:
  - ``DetectorByProj_*.det``, containing binary float32 ``>f4`` data of exit detector sinogram.
  - ``TelemFluence_*.dplan``, containing and binary-to-ASCII float64 ``>f8`` data with machine telemetry data.
- - ``TelemTiming_*.dat``
+ - ``TelemTiming_*.dat``, containing fragment boundaries for machine telemetry data.
 
 These files will only be present if the patient treatment data has been opened in the Delivery Analysis software prior to use of the PDE tool.
 
