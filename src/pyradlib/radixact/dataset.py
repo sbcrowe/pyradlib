@@ -327,7 +327,7 @@ class RadixactDataset:
                     telemetry_sinograms.append(
                         RadixactSinogram.from_dplan(
                             telemetry_sinogram_file, uid
-                        ).add_timestamps(telemetry_timing_dict[uid])
+                        ).apply_timing(telemetry_timing_dict[uid])
                     )
                 else:
                     logger.debug(f"Loading {telemetry_sinogram_file}")
