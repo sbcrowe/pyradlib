@@ -1,7 +1,8 @@
 # -*- coding: utf-8 -*-
-""" Motion analysis module.
+"""Motion analysis module.
 
-This module provides functionality for processing of motion data from Synchrony treatments.
+This module provides functionality for processing of motion data from Synchrony
+treatments.
 """
 
 # authorship information
@@ -11,1489 +12,476 @@ __credits__ = []
 __license__ = "GPL3"
 
 # import required code
-import datetime
-import glob
-import matplotlib as mpl
-import matplotlib.pyplot as plt
+import logging
+import os
+import xml.etree.ElementTree as et
+from functools import cached_property
+
 import numpy as np
 import numpy.typing as npt
-import os
-import pandas as pd
-import re
-import xml.etree.ElementTree as et
+import polars as pl
 
-# define default variables
-_patient_export_data_file = 'PatientExportDataBO.xml'
+logger = logging.getLogger(__name__)
 
 
-def read_motion_data(xml_filepaths: npt.ArrayLike):
-    """Extracts motion data from *motionData.xml files representing a single fraction.
+class RadixactSynchronyMotion:
+    # region Constructors
 
-    Parameters
-    ----------
-    xml_filepaths : array_like
-        List of paths to XML files containing motion data.
+    def __init__(self, df: pl.DataFrame, uid: str = None) -> RadixactSynchronyMotion:
+        """
+        Parameters
+        ----------
+        df : pl.DataFrame
+            Dataframe containing relative timestamps of motion data (in sec),
+            IEC-X, IEC-Y, and IEC-Z displacements (in mm), and optionally,
+            rigid body values, potential diffs and measured deltas (in mm).
+        uid : str, optional
+            Unique identifier string, to allow association with other data. Default is
+            None.
 
-    Returns
-    -------
-    time, potential_diff, rigid_body, x_offset, y_offset, z_offset, meas_diff : array_like
-        Output arrays, containing paired timestamps, potential differences, rigid body
-        differences, and IEC-X, IEC-Y and IEC-Z offsets (in sec, mm).
+        Returns
+        -------
+        RadixactSynchronyMotion
+            The Radixact Synchrony motion data encapsulated with helper functions.
+        """
+        self._df = df
+        self._uid = uid
 
-    Notes
-    -----
-    These files are included in Patient Data Extractor archives, though are renamed using 
-    tokens described within the PatientExportDataBO.xml file. These files are also cached
-    as C:/tomo/da/pts/URnumber/*motionData.xml when patient data is loaded within the 
-    Delivery Analysis tool. There may be multiple files per fraction.
+    @classmethod
+    def from_array_likes(
+        cls,
+        times: npt.ArrayLike,
+        x_displacements: npt.ArrayLike,
+        y_displacements: npt.ArrayLike,
+        z_displacements: npt.ArrayLike,
+        rigid_body_values: npt.ArrayLike = None,
+        potential_diffs: npt.ArrayLike = None,
+        measured_deltas: npt.ArrayLike = None,
+        uid: str = None,
+    ) -> RadixactSynchronyMotion:
+        """_summary_
 
-    Pauses in fractions (e.g. due to user, Synchrony, or system errors) are indicated by
-    numpy.nan. This allows more accurate plotting of the data using matplotlib.
-    """
-    time = []
-    potential_diff = []
-    rigid_body = []
-    x_offset = []
-    y_offset = []
-    z_offset = []
-    meas_diff = []
-    for xml_path in xml_filepaths:
-        tree = et.parse(xml_path)
+        Parameters
+        ----------
+        times : npt.ArrayLike
+            Relative timestamps of motion data points, in sec.
+        x_displacements : npt.ArrayLike
+            IEC-X or left-right displacements, in mm.
+        y_displacements : npt.ArrayLike
+            IEC-Y or superior-inferior displacements, in mm.
+        z_displacements : npt.ArrayLike
+            IEC-Z or anterior-posterior displacements, in mm.
+        rigid_body_values : npt.ArrayLike, optional
+            Rigid body fiducial deformation, in mm.
+        potential_diffs : npt.ArrayLike, optional
+            Potential difference of uncertainty in model, in mm.
+        measured_deltas : npt.ArrayLike, optional
+            Measured difference between model and images, in mm.
+        uid : str, optional
+            Unique identifier string, to allow association with other data. Default is
+            None.
+
+        Returns
+        -------
+        RadixactSynchronyMotion
+            The Radixact Synchrony motion data encapsulated with helper functions.
+        """
+        df_dict = {}
+        nan_indices = np.where(np.isnan(times))[0]
+        # TODO Verify segment_index and not result_index is appropriate below.
+        if len(nan_indices) == 0:
+            segment = [1] * len(times)
+        else:
+            segment = []
+            curr_fragment = 1
+            curr_index = 0
+            for nan_index in nan_indices:
+                num_fragment_data_points = nan_index - curr_index
+                segment += [curr_fragment] * num_fragment_data_points
+                segment += [np.nan]
+                curr_index = nan_index + 1
+                curr_fragment += 1
+            segment.pop()
+        df_dict["segment_index"] = segment
+        df_dict["delta_time"] = times
+        df_dict["target_offset_x"] = x_displacements
+        df_dict["target_offset_y"] = y_displacements
+        df_dict["target_offset_z"] = z_displacements
+        if rigid_body_values is not None:
+            df_dict["rigid_body"] = rigid_body_values
+        if potential_diffs is not None:
+            df_dict["potential_diff"] = potential_diffs
+        if measured_deltas is not None:
+            df_dict["measured_diff"] = measured_deltas
+        df = pl.DataFrame(df_dict)
+        df = df.with_columns(
+            (
+                (pl.col("target_offset_x") ** 2)
+                + (pl.col("target_offset_y") ** 2)
+                + (pl.col("target_offset_z") ** 2)
+            )
+            .sqrt()
+            .alias("target_offset_vector"),
+            (pl.col("target_offset_x") - pl.col("target_offset_x").first()).alias(
+                "delta_target_offset_x"
+            ),
+            (pl.col("target_offset_y") - pl.col("target_offset_y").first()).alias(
+                "delta_target_offset_y"
+            ),
+            (pl.col("target_offset_z") - pl.col("target_offset_z").first()).alias(
+                "delta_target_offset_z"
+            ),
+        )
+        df = df.with_columns(
+            (
+                (pl.col("target_offset_x") ** 2)
+                + (pl.col("target_offset_y") ** 2)
+                + (pl.col("target_offset_z") ** 2)
+            )
+            .sqrt()
+            .alias("delta_target_offset_vector")
+        )
+        return cls(df, uid)
+
+    @classmethod
+    def from_xml(
+        cls, path: str | os.PathLike, uid: str = None
+    ) -> RadixactSynchronyMotion:
+        """Extracts motion data from *motionData.xml file representing a patient
+        treatment fraction fragment, taken from a Delivery Analysis cache or Patient
+        Data Extractor archive.
+
+        Parameters
+        ----------
+        path : str | os.PathLike
+            Path to XML file containing motion data.
+        uid : str, optional
+            Unique identifier string, to allow association with other data. Default is
+            None.
+
+        Returns
+        -------
+        RadixactSynchronyMotion
+            The Radixact Synchrony motion data encapsulated with helper functions.
+
+        Notes
+        -----
+        Motion data are included in Patient Data Extractor archives, though are renamed
+        using tokens described within the PatientExportDataBO.xml file. These files are
+        also cached as C:/tomo/da/pts/URnumber/*motionData.xml when patient data is
+        loaded within the Delivery Analysis tool. There may be multiple files per
+        fraction.
+
+        This function has only been validated for version 3 MotionData.xml files.
+
+        Pauses in fractions (e.g. due to user, Synchrony, or system errors) will be
+        indicated by numpy.nan. This allows more accurate plotting of the data using
+        matplotlib.
+        """
+        tree = et.parse(path)
         root = tree.getroot()
+        dfs = []
         for delivery_segment in root.iter("DeliverySegment"):
             for radiation_results in delivery_segment.iter("RadiationResults"):
                 for model_data in radiation_results.iter("ModelData"):
+                    data = []
                     for datapoint in model_data.iter("DataPoint"):
-                        time.append(float(datapoint[0].text) / 1e3)
-                        potential_diff.append(float(datapoint[1].text))
-                        rigid_body.append(float(datapoint[2].text))
-                        x_offset.append(float(datapoint[3][0].text))
-                        y_offset.append(float(datapoint[3][1].text))
-                        z_offset.append(float(datapoint[3][2].text))
-                        meas_diff.append(float(datapoint[4].text))
-                    # include NaN to reflect beam being paused at end of radiation result (which forces matplotlib to break line)
-                    time.append(np.nan)
-                    potential_diff.append(np.nan)
-                    rigid_body.append(np.nan)
-                    x_offset.append(np.nan)
-                    y_offset.append(np.nan)
-                    z_offset.append(np.nan)
-                    meas_diff.append(np.nan)
-    # remove trailing NaN, because completion is not a pause
-    if len(time) > 0:
-        time.pop()
-        potential_diff.pop()
-        rigid_body.pop()
-        x_offset.pop()
-        y_offset.pop()
-        z_offset.pop()
-        meas_diff.pop()
-    return time, potential_diff, rigid_body, x_offset, y_offset, z_offset, meas_diff
-
-
-def convert_motion_data_to_csv(xml_filepaths: npt.ArrayLike, csv_filepath: str):
-    """Converts motion data from *motionData.xml files produced for the Radixact
-    Delivery Analysis tool to CSV files.
-
-    Parameters
-    ----------
-    xml_filepaths : array_like
-        List of paths to XML files containing motion data.
-    csv_filepath : str
-        Path for CSV file to be written.
-
-    Notes
-    -----
-    These files are included in Patient Data Extractor archives, though are renamed using 
-    tokens described within the PatientExportDataBO.xml file. These files are also cached
-    as C:/tomo/da/pts/URnumber/*motionData.xml when patient data is loaded within the 
-    Delivery Analysis tool. There may be multiple files per fraction.
-
-    Pauses in fractions (e.g. due to user, Synchrony, or system errors) are indicated by
-    numpy.nan. This allows more accurate plotting of the data using matplotlib.
-    """
-    time, potential_diff, rigid_body, x_offset, y_offset, z_offset, meas_diff = read_motion_data(
-        xml_filepaths
-    )
-    np.savetxt(
-        csv_filepath,
-        zip(time, x_offset, y_offset, z_offset),
-        delimiter=",",
-        header="Time (s), IEC-X (mm), IEC-Y (mm), IEC-Z (mm)",
-    )
-
-
-def modify_motion_data(
-    time: npt.ArrayLike,
-    potential_diff: npt.ArrayLike,
-    rigid_body: npt.ArrayLike,
-    x_offset: npt.ArrayLike,
-    y_offset: npt.ArrayLike,
-    z_offset: npt.ArrayLike,
-    meas_diff: npt.ArrayLike,
-    remove_duplicates: bool = True,
-    remove_variable_pauses: bool = True,
-    replacement_pause_length: float = 5,
-    zero_reference_point: bool = False,
-):
-    """Modify extracted motion data for improved presentation.
-
-    Parameters
-    ----------
-    time, potential_diff, rigid_body, x_offset, y_offset, z_offset : array_like
-        Input arrays, containing paired timestamps, potential differences, rigid body
-        differences, and IEC-X, IEC-Y and IEC-Z offsets (in sec, mm).
-    remove_duplicates : bool, optional
-        Flag indicating removal of duplicate data points, including at start of
-        treatment, for reduced data density and profile length (default is True).
-    remove_variable_pauses : bool, optional
-        Flag indicating replacement of variable length pauses in treatment with short
-        fixed length, defined by pause_offset_time (default is True).
-    replacement_pause_length : float, optional
-        Time period used when replacing variable pauses in beam delivery, e.g.,
-        5 sec (default).
-    zero_reference_point : bool, optional
-        Flag indicating whether coordinates are shifted for starting positions, i.e.
-        whether X, Y and Z are shifted to 0 at time 0, and following any pause (default
-        is False).
-
-    Returns
-    -------
-    time, potential_diff, rigid_body, x_offset, y_offset, z_offset : array_like
-        Output arrays, containing adjusted paired timestamps, potential differences,
-        rigid body differences, and IEC-X, IEC-Y and IEC-Z offsets (in sec, mm).
-    pause_times : array_like
-        Output array, containing 0 or more paired timestamps indicating when pauses in
-        treatment occur, for plotting (in sec, mm).
-    """
-    # adjust time and position data
-    deleted_indices = []
-    if remove_duplicates:
-        for i in range(len(time) - 1):
-            if (
-                np.array([x_offset[i], y_offset[i], z_offset[i]])
-                == np.array([x_offset[i + 1], y_offset[i + 1], z_offset[i + 1]])
-            ).all():
-                deleted_indices.append(i)
-    new_time = np.delete(time, deleted_indices)
-    new_potential_diff = np.delete(potential_diff, deleted_indices)
-    new_rigid_body = np.delete(rigid_body, deleted_indices)
-    new_x_offset = np.delete(x_offset, deleted_indices)
-    new_y_offset = np.delete(y_offset, deleted_indices)
-    new_z_offset = np.delete(z_offset, deleted_indices)
-    new_meas_diff = np.delete(meas_diff, deleted_indices)
-    # adjust time data
-    adjusted_time = []
-    pauses = []
-    # if no pauses, shift so first image is time 0
-    if np.isnan(time).sum() == 0:
-        # if no pauses, shift so first result is time 0
-        adjusted_time = np.array(new_time) - new_time[0]
-    else:
-        # if there are pauses, contract and/or calculate pause lengths
-        for i in range(len(new_time)):
-            if i == 0:
-                adjusted_time.append(0)
-            elif np.isnan(time[i]):
-                adjusted_time.append(np.nan)
-            else:
-                if np.isnan(adjusted_time[-1]) and remove_variable_pauses:
-                    last_valid_index = np.where(~np.isnan(adjusted_time))[0][-1]
-                    adjusted_time.append(
-                        adjusted_time[last_valid_index] + replacement_pause_length
-                    )
-                    pauses.append(
-                        [
-                            adjusted_time[last_valid_index],
-                            adjusted_time[last_valid_index] + replacement_pause_length,
-                        ]
-                    )
-                elif np.isnan(adjusted_time[-1]) and not remove_variable_pauses:
-                    last_valid_index = np.where(~np.isnan(adjusted_time))[0][-1]
-                    adjusted_time.append(
-                        adjusted_time[last_valid_index]
-                        + (new_time[i] - new_time[last_valid_index])
-                    )
-                    pauses.append([adjusted_time[last_valid_index], adjusted_time[-1]])
-                else:
-                    adjusted_time.append(
-                        adjusted_time[-1] + (new_time[i] - new_time[i - 1])
-                    )
-    if zero_reference_point:
-        x_shift = np.NaN
-        y_shift = np.NaN
-        z_shift = np.NaN
-        for i in range(len(adjusted_time)):
-            if np.isnan(new_x_offset[i]):
-                # if pause encountered
-                x_shift = np.NaN
-                y_shift = np.NaN
-                z_shift = np.NaN
-            else:
-                if np.isnan(x_shift):
-                    # if at start of treatment or following pause
-                    x_shift = -new_x_offset[i]
-                    y_shift = -new_y_offset[i]
-                    z_shift = -new_z_offset[i]
-                new_x_offset[i] = new_x_offset[i] + x_shift
-                new_y_offset[i] = new_y_offset[i] + y_shift
-                new_z_offset[i] = new_z_offset[i] + z_shift
-    return (
-        adjusted_time,
-        new_potential_diff,
-        new_rigid_body,
-        new_x_offset,
-        new_y_offset,
-        new_z_offset,
-        meas_diff,
-        pauses,
-    )
-
-
-def patient_fraction_xml_lists(patient_path: str, combine_same_day_sessions: bool = True):
-    """Produces list containing lists of *motionData.xml paths for each fraction of one or
-    more treatments for a given patient.
-
-    Parameters
-    ----------
-    patient_path : str
-        The path containing the *motionData.xml files to be listed.
-    combine_same_day_sessions : bool
-        Flag indicating whether multiple sessions from single day should be considered to be
-        the same treatment fraction.
-
-    Notes
-    -----
-    The specified directory should either correspond to an extracted Patient Data Extractor
-    archive (containing .cdms files) or a patient cache used by the Delivery Analysis tool,
-    located at C:/tomo/da/pts/URnumber/, containing *motionData.xml files.
-    """
-    if os.path.isfile(os.path.join(patient_path, _patient_export_data_file)):
-        return patient_fraction_xml_lists_from_pde(
-            os.path.join(patient_path, _patient_export_data_file), combine_same_day_sessions)
-    else:
-        return patient_fraction_xml_lists_from_motiondata(patient_path)
-
-
-def cohort_fraction_xml_lists(patient_paths: npt.ArrayLike, combine_same_day_sessions: bool = True):
-    """Produces list containing lists of *motionData.xml paths for each fraction of one or
-    more treatments for one or more patients.
-
-    Parameters
-    ----------
-    patient_paths : array_like
-        The paths containing the *motionData.xml files to be listed.
-    combine_same_day_sessions : bool
-        Flag indicating whether multiple sessions from single day should be considered to be
-        the same treatment fraction.
-
-    Notes
-    -----
-    The specified directory should either correspond to an extracted Patient Data Extractor
-    archive (containing .cdms files) or a patient cache used by the Delivery Analysis tool,
-    located at C:/tomo/da/pts/URnumber/, containing *motionData.xml files.
-    """
-    motion_paths = []
-    for patient_path in patient_paths:
-        motion_paths = motion_paths + patient_fraction_xml_lists(patient_path, combine_same_day_sessions)
-    return motion_paths
-        
-
-def patient_fraction_xml_lists_from_pde(patient_data_bo_path: str, 
-                                        combine_same_day_sessions: bool = True):
-    """Produces list containing lists of *motionData.xml paths for each fraction of one or
-    more treatments for a given patient.
-
-    Parameters
-    ----------
-    patient_data_bo_path : str
-        The path to the PatientExportDataBO.xml file.
-    combine_same_day_sessions : bool
-        Flag indicating whether multiple sessions from single day should be considered to be
-        the same treatment fraction.
-
-    Notes
-    -----
-    The specified path should correspond to the PatientExportDataBO.xml file in an extracted 
-    Patient Data Extractor archive (containing .cdms files).
-    """
-    dir = os.path.dirname(patient_data_bo_path)
-    tree = et.parse(patient_data_bo_path)
-    xml_files = {}
-    for file_child in tree.getroot().findall("PatientFiles/FileSystemBOList/FileSystemBO"):
-        orig_file = file_child.find('OrigFileName').text
-        if orig_file.endswith('MotionData.xml'):
-            if combine_same_day_sessions:
-                date = orig_file.split('.')[5][0:8]
-                if date in xml_files:
-                    xml_files[date] = xml_files[date] + [os.path.join(dir, file_child.find('FileToken').text.split('$')[1])]
-                else:
-                    xml_files[date] = [os.path.join(dir, file_child.find('FileToken').text.split('$')[1])]
-            else:    
-                xml_files[orig_file] = [os.path.join(dir, file_child.find('FileToken').text.split('$')[1])]
-    return list(xml_files.values())
-
-
-def patient_fraction_xml_lists_from_motiondata(patient_path: str):
-    """Produces list containing lists of *motionData.xml paths for each fraction of one or
-    more treatments for a given patient.
-
-    Parameters
-    ----------
-    patient_path : str
-        The path containing the *motionData.xml files to be listed.
-
-    Notes
-    -----
-    The specified directory should correspond to a patient cache used by the Delivery Analysis 
-    tool, located at C:/tomo/da/pts/URnumber/, containing *motionData.xml files.
-    """
-    motion_files = sorted(
-        glob.glob(os.path.join(patient_path, "*motionData.xml")),
-        key=lambda x: float(
-            re.findall("(\d+.\d+)", x.split("-")[-2] + "." + x.split("-")[-1])[0]
-        ),
-    )
-    if len(motion_files) == 0:
-        return []
-    motion_paths = {}
-    for motion_file in motion_files:
-        id = (
-            "-".join(os.path.split(motion_file)[1].split("-")[0:-2])
-            + "-"
-            + os.path.split(motion_file)[1].split("-")[-2].zfill(2)
-        )
-        if id in motion_paths:
-            curr_list = motion_paths[id]
-            curr_list.append(motion_file)
-            motion_paths[id] = curr_list
-        else:
-            motion_paths[id] = [motion_file]
-    motion_paths = dict(sorted(motion_paths.items()))
-    return list(motion_paths.values())
-
-
-def convert_patient_motion_data_to_csv(patient_path: str, csv_path: str):
-    """Writes target offset data to CSV file.
-
-    Parameters
-    ----------
-    patient_path : str
-        The path containing the *motionData.xml files to be listed.
-    csv_path : str
-        The path defining the CSV file to be written.
-
-    Notes
-    -----
-    The specified directory should either correspond to an extracted Patient Data Extractor
-    archive (containing .cdms files) or a patient cache used by the Delivery Analysis tool,
-    located at C:/tomo/da/pts/URnumber/.
-    """
-    fraction_xml_paths = patient_fraction_xml_lists(patient_path)
-    for fraction in range(len(fraction_xml_paths)):
-        time, potential_diff, rigid_body, x_offset, y_offset, z_offset, meas_diff = (
-            read_motion_data(fraction_xml_paths[fraction])
-        )
-        time, potential_diff, rigid_body, x_offset, y_offset, z_offset, meas_diff, pauses = (
-            modify_motion_data(
-                time,
-                potential_diff,
-                rigid_body,
-                x_offset,
-                y_offset,
-                z_offset,
-                meas_diff,
-                remove_duplicates=True,
-                remove_variable_pauses=False,
-                # replacement_pause_length =
-                zero_reference_point=False,
-            )
-        )
-        np.savetxt(
-            os.path.join(csv_path, "Fraction " + str(fraction + 1) + ".csv"),
-            np.column_stack((time, x_offset, y_offset, z_offset)),
-            delimiter=",",
-            header="Time (s), IEC-X (mm), IEC-Y (mm), IEC-Z (mm)",
-        )
-
-
-def calculate_vector_displacements(
-    time: npt.ArrayLike,
-    x_offset: npt.ArrayLike,
-    y_offset: npt.ArrayLike,
-    z_offset: npt.ArrayLike,
-    point_by_point_displacement: bool = False,
-):
-    """Calculate 3D vector displacements.
-
-    Parameters
-    ----------
-    time, x_offset, y_offset, z_offset : array_like
-        Input arrays, containing paired timestamps, and IEC-X, IEC-Y and IEC-Z offsets
-        (in sec, mm, with duplicates removed).
-    point_by_point_displacement : bool, optional
-        Flag indicating whether displacement should be calculated relative to most recent
-        offset data, as opposed to most recent starting offset data (i.e., at start of
-        treatment or after a pause, default is False).
-
-    Returns
-    -------
-    vector_displacement_times, vector_displacements : array_like
-        Output arrays, containing adjusted paired timestamps, and displacement times
-        (in sec, mm).
-    """
-    result_time = []
-    result_displacement = []
-    x_ref = np.NaN
-    y_ref = np.NaN
-    z_ref = np.NaN
-    for i in range(len(time)):
-        if np.isnan(x_offset[i]):
-            # if pause encountered
-            x_ref = np.NaN
-            y_ref = np.NaN
-            z_ref = np.NaN
-        else:
-            if np.isnan(x_ref):
-                # if reference not set (i.e., at start, or following pause)
-                x_ref = x_offset[i]
-                y_ref = x_offset[i]
-                z_ref = x_offset[i]
-            else:
-                result_time.append(time[i])
-                result_displacement.append(
-                    np.sqrt(
-                        np.square(x_ref - x_offset[i])
-                        + np.square(y_ref - y_offset[i])
-                        + np.square(z_ref - z_offset[i])
-                    )
-                )
-                if point_by_point_displacement:
-                    x_ref = x_offset[i]
-                    y_ref = x_offset[i]
-                    z_ref = x_offset[i]
-    return np.array(result_time), np.array(result_displacement)
-
-
-def plot_motion_data(
-    fraction_xml_paths: npt.ArrayLike,
-    png_filepath: str,
-    title: str,
-    plot_potential_diff: bool = False,
-    plot_rigid_body: bool = False,
-    plot_meas_diff: bool = False,
-    number_columns: int = 5,
-    share_x_axis: bool = True,
-    remove_duplicates: bool = True,
-    remove_variable_pauses: bool = True,
-    replacement_pause_length: float = 5,
-    pause_color="lightgrey",
-    zero_reference_point: bool = False,
-    wide_plot: bool = False,
-):
-    """Plot collection of motion data spanning multiple fractions.
-
-    Parameters
-    ----------
-    fraction_xml_paths : array_like
-        List containing lists of *motionData.xml paths for each fraction.
-    png_filepath : str
-        Path for PNG file to be written.
-    title : str
-        Title text to use for figure.
-    plot_potential_diff : bool, optional
-        Flag indicating whether potential difference is plotted (default is False).
-    plot_rigid_body : bool, optional
-        Flag indicating whether rigid body difference is plotted (default is False).
-    plot_meas_diff : bool, optional
-        Flag indicating whether measured difference is plotted (default is False).
-    number_columns : int, optional
-        Number of columns for plotted data.
-    remove_duplicates : bool, optional
-        Flag indicating removal of duplicate data points, including at start of treatment,
-        for reduced data density and profile length (default is True).
-    remove_variable_pauses : bool, optional
-        Flag indicating replacement of variable length pauses in treatment with short
-        fixed length, defined by pause_offset_time (default is True).
-    replacement_pause_length : float, optional
-        Time period used when replacing variable pauses in beam delivery, e.g., 5 sec
-        (default).
-    pause_colour : str, optional
-        Color to use to indicate pauses in treatment, e.g., 'lightgrey' (default).
-    zero_reference_point : bool, optional
-        Flag indicating whether coordinates are shifted for starting positions, i.e.
-        whether X, Y and Z are shifted to 0 at time 0, and following any pause (default
-        is False).
-    wide_plot : bool, optional
-        Flag indicating whether figure should be wide. Intended for use with high 
-        frequency motion or long treatments.
-    """
-    ncols = np.min([number_columns, len(fraction_xml_paths)])
-    nrows = int((len(fraction_xml_paths) + (ncols - 1)) / ncols)
-    if wide_plot:
-        width_multiplier = 8
-    else: 
-        width_multiplier = 2
-    fig, axs = plt.subplots(
-        ncols=ncols,
-        nrows=nrows,
-        sharex=share_x_axis,
-        sharey=True,
-        gridspec_kw={"hspace": 0, "wspace": 0},
-        constrained_layout=True,
-        figsize=(ncols * width_multiplier + 1, nrows * 2 + 1),
-    )
-    for fraction in range(len(fraction_xml_paths)):
-        time, potential_diff, rigid_body, x_offset, y_offset, z_offset, meas_diff = (
-            read_motion_data(fraction_xml_paths[fraction])
-        )
-        time, potential_diff, rigid_body, x_offset, y_offset, z_offset, meas_diff, pauses = (
-            modify_motion_data(
-                time,
-                potential_diff,
-                rigid_body,
-                x_offset,
-                y_offset,
-                z_offset,
-                meas_diff,
-                remove_duplicates,
-                remove_variable_pauses,
-                replacement_pause_length,
-                zero_reference_point,
-            )
-        )
-        col = int(fraction % ncols)
-        row = int(fraction / ncols)
-        if nrows > 1:
-            (l1,) = axs[row, col].plot(time, x_offset)
-            (l2,) = axs[row, col].plot(time, y_offset)
-            (l3,) = axs[row, col].plot(time, z_offset)
-        elif ncols > 1:
-            (l1,) = axs[col].plot(time, x_offset)
-            (l2,) = axs[col].plot(time, y_offset)
-            (l3,) = axs[col].plot(time, z_offset)
-        else:
-            (l1,) = axs.plot(time, x_offset)
-            (l2,) = axs.plot(time, y_offset)
-            (l3,) = axs.plot(time, z_offset)
-        plotted = [l1, l2, l3]
-        legend = ["IEC-X (LR)", "IEC-Y (SI)", "IEC-Z (AP)"]
-        if plot_potential_diff:
-            if nrows > 1:
-                (l4,) = axs[row, col].plot(time, potential_diff)
-            elif ncols > 1:
-                (l4,) = axs[col].plot(time, potential_diff)
-            else:
-                (l4,) = axs.plot(time, potential_diff)
-            plotted.append(l4)
-            legend.append("Potential Diff")
-        if plot_rigid_body:
-            if nrows > 1:
-                (l5,) = axs[row, col].plot(time, rigid_body)
-            elif ncols > 1:
-                (l5,) = axs[col].plot(time, rigid_body)
-            else:
-                (l5,) = axs.plot(time, rigid_body)
-            plotted.append(l5)
-            legend.append("Rigid Body")
-        if plot_meas_diff:
-            if nrows > 1:
-                (l5,) = axs[row, col].plot(time, meas_diff)
-            elif ncols > 1:
-                (l5,) = axs[col].plot(time, meas_diff)
-            else:
-                (l5,) = axs.plot(time, meas_diff)
-            plotted.append(l5)
-            legend.append("Measured Diff")
-        for pause_time in pauses:
-            if nrows > 1:
-                axs[row, col].axvspan(
-                    pause_time[0], pause_time[1], color=pause_color, lw=0
-                )
-            elif ncols > 1:
-                axs[col].axvspan(pause_time[0], pause_time[1], color=pause_color, lw=0)
-            else:
-                axs.axvspan(pause_time[0], pause_time[1], color=pause_color, lw=0)
-        if nrows > 1:
-            axs[row, col].set_title(fraction + 1, y=1.0, pad=-14)
-        elif ncols > 1:
-            axs[col].set_title(fraction + 1, y=1.0, pad=-14)
-        else:
-            axs.set_title(fraction + 1, y=1.0, pad=-14)
-    # plt.ylim(-_plot_maximum_motion,_plot_maximum_motion)
-    fig.legend(
-        plotted,
-        legend,
-        loc="center right",
-        ncol=ncols,
-        fancybox=True,
-        bbox_to_anchor=(1.05, 1),
-    )
-    fig.supxlabel("Time (s)")
-    fig.supylabel("Displacement (mm)")
-    # remove empty grids if there is an empty cell
-    """if len(fraction_xml_paths) % ncols > 0:
-        if nrows > 1:
-            axs[-1, -1].set_axis_off()
-            axs[-2, -1].xaxis.set_tick_params(which="both", labelbottom=True)
-        elif ncols > 1:
-            axs[-1].set_axis_off()
-        if len(fraction_xml_paths) % ncols < 4:
-            if nrows > 1:
-                axs[-1, -2].set_axis_off()
-                axs[-2, -2].xaxis.set_tick_params(which="both", labelbottom=True)
-            elif ncols > 1:
-                axs[-2].set_axis_off()
-            if len(fraction_xml_paths) % ncols < 3:
-                if nrows > 1:
-                    axs[-1, -3].set_axis_off()
-                    axs[-2, -3].xaxis.set_tick_params(which="both", labelbottom=True)
-                elif ncols > 1:
-                    axs[-3].set_axis_off()
-                if len(fraction_xml_paths) % ncols < 2:
-                    if nrows > 1:
-                        axs[-1, -4].set_axis_off()
-                        axs[-2, -4].xaxis.set_tick_params(
-                            which="both", labelbottom=True
+                        data.append(
+                            {
+                                "segment_index": int(delivery_segment[0].text),
+                                "result_index": int(radiation_results[0].text),
+                                "potential_diff_tolerance": float(model_data[0].text),
+                                "measured_diff_tolerance": float(model_data[1].text),
+                                "timestamp": int(datapoint[0].text),
+                                "potential_diff": float(datapoint[1].text),
+                                "rigid_body": float(datapoint[2].text),
+                                "target_offset_x": float(datapoint[3][0].text),
+                                "target_offset_y": float(datapoint[3][1].text),
+                                "target_offset_z": float(datapoint[3][2].text),
+                                "measured_diff": float(datapoint[4].text),
+                            }
                         )
-                    elif ncols > 1:
-                        axs[-4].set_axis_off()
-    """
-    fig.suptitle(title)
-    plt.savefig(png_filepath, bbox_inches="tight")
-
-
-def plot_patient_motion_data(
-    patient_path: str, 
-    png_filepath: str, 
-    title: str, 
-    plot_potential_diff: bool = False,
-    plot_rigid_body: bool = False,
-    plot_meas_diff: bool = False,
-    zero_reference_point: bool = False, 
-    number_columns : int = 5, 
-    wide_plot: bool = False,
-    combine_same_day_sessions: bool = True
-):
-    """Plot motion data contained within specific patient directory.
-
-    Parameters
-    ----------
-    patient_path : str
-        The path containing the *motionData.xml files to be plotted.
-    png_filepath : str
-        Path for PNG file to be written.
-    title : str
-        Title text to use for figure.
-    plot_potential_diff : bool, optional
-        Flag indicating whether potential difference is plotted (default is False).
-    plot_rigid_body : bool, optional
-        Flag indicating whether rigid body difference is plotted (default is False).
-    plot_meas_diff : bool, optional
-        Flag indicating whether measured difference is plotted (default is False).
-    zero_reference_point : bool, optional
-        Flag indicating whether coordinates are shifted for starting positions, i.e.
-        whether X, Y and Z are shifted to 0 at time 0, and following any pause (default
-        is False).
-    number_columns : int, optional
-        Number of columns for plotted data.
-    wide_plot : bool, optional
-        Flag indicating whether figure should be wide. Intended for use with high 
-        frequency motion or long treatments.
-
-    Notes
-    -----
-    The specified directory should either correspond to an extracted Patient Data Extractor
-    archive (containing .cdms files) or a patient cache used by the Delivery Analysis tool,
-    located at C:/tomo/da/pts/URnumber/.
-    """
-    motion_paths = patient_fraction_xml_lists(patient_path, combine_same_day_sessions)
-    if len(motion_paths) > 0:
-        plot_motion_data(
-            motion_paths,
-            png_filepath,
-            title,
-            plot_potential_diff=plot_potential_diff,
-            plot_rigid_body=plot_rigid_body,
-            plot_meas_diff=plot_meas_diff,
-            zero_reference_point=zero_reference_point,
-            number_columns=number_columns,
-            wide_plot=wide_plot
-        )
-
-
-def plot_patient_motion_data_boxplot(
-    patient_path: str,
-    png_filepath: str,
-    title: str,
-    zero_reference_point: bool = True,
-    type="classical",
-):
-    """Plot boxplot of motion data contained within specific patient directory.
-
-    Parameters
-    ----------
-    patient_path : str
-        The path containing the *motionData.xml files to be plotted.
-    png_filepath : str
-        Path for PNG file to be written.
-    title : str
-        Title text to use for figure.
-    zero_reference_point : bool, optional
-        Flag indicating whether coordinates are shifted for starting positions, i.e.
-        whether X, Y and Z are shifted to 0 at time 0, and following any pause (default
-        is False).
-    type : str, optional
-        Type of boxplot to produce, possible values are "classical" and "functional"
-        (default is "classical").
-
-    Notes
-    -----
-    The specified directory should either correspond to an extracted Patient Data Extractor
-    archive (containing .cdms files) or a patient cache used by the Delivery Analysis tool,
-    located at C:/tomo/da/pts/URnumber/.
-    """
-    motion_paths = patient_fraction_xml_lists(patient_path)
-    if len(motion_paths) == 0:
-        return
-    fig, axs = plt.subplots(
-        ncols=1,
-        nrows=3,
-        sharex=True,
-        sharey=True,
-        gridspec_kw={"hspace": 0, "wspace": 0},
-        constrained_layout=True,
-        figsize=(4, 7),
-    )
-    all_x_offset = []
-    all_y_offset = []
-    all_z_offset = []
-    for fraction in range(len(motion_paths)):
-        time, potential_diff, rigid_body, x_offset, y_offset, z_offset, meas_diff = (
-            read_motion_data(motion_paths[fraction])
-        )
-        time, potential_diff, rigid_body, x_offset, y_offset, z_offset, meas_diff, pauses = (
-            modify_motion_data(
-                time,
-                potential_diff,
-                rigid_body,
-                x_offset,
-                y_offset,
-                z_offset,
-                meas_diff,
-                remove_duplicates=True,
-                remove_variable_pauses=True,
-                replacement_pause_length=0,
-                zero_reference_point=zero_reference_point,
+                    df = pl.DataFrame(data)
+                    df = df.with_columns(
+                        (
+                            (pl.col("target_offset_x") ** 2)
+                            + (pl.col("target_offset_z") ** 2)
+                        )
+                        .sqrt()
+                        .alias("target_offset_lateral"),
+                        (
+                            (pl.col("target_offset_x") ** 2)
+                            + (pl.col("target_offset_y") ** 2)
+                            + (pl.col("target_offset_z") ** 2)
+                        )
+                        .sqrt()
+                        .alias("target_offset_vector"),
+                        (
+                            pl.col("target_offset_x")
+                            - pl.col("target_offset_x").first()
+                        ).alias("delta_target_offset_x"),
+                        (
+                            pl.col("target_offset_y")
+                            - pl.col("target_offset_y").first()
+                        ).alias("delta_target_offset_y"),
+                        (
+                            pl.col("target_offset_z")
+                            - pl.col("target_offset_z").first()
+                        ).alias("delta_target_offset_z"),
+                    )
+                    df = df.with_columns(
+                        (
+                            (pl.col("target_offset_x") ** 2)
+                            + (pl.col("target_offset_y") ** 2)
+                            + (pl.col("target_offset_z") ** 2)
+                        )
+                        .sqrt()
+                        .alias("delta_target_offset_vector")
+                    )
+                    dfs.append(df)
+        # Create dataframe
+        df = pl.concat(dfs)
+        df = df.with_columns(
+            ((pl.col("timestamp") - pl.col("timestamp").first()) / 1000).alias(
+                "delta_time"
             )
         )
-        all_x_offset.append(x_offset[~np.isnan(x_offset)])
-        all_y_offset.append(y_offset[~np.isnan(y_offset)])
-        all_z_offset.append(z_offset[~np.isnan(z_offset)])
-    if type == "classical":
-        axs[0].boxplot(all_x_offset)
-        axs[1].boxplot(all_y_offset)
-        axs[2].boxplot(all_z_offset)
-    if type == "functional":
-        plots = []
-        for level in [100, 50]:
-            color = mpl.colormaps["Blues"](int(25.6 + ((100 - level) * 2)))
-            plots.append(
-                axs[0].fill_between(
-                    range(len(all_x_offset)),
-                    [np.percentile(data, 50 + (level / 2)) for data in all_x_offset],
-                    [np.percentile(data, 50 - (level / 2)) for data in all_x_offset],
-                    color=color,
+        df = df.with_columns(
+            pl.from_epoch("timestamp", time_unit="ms").alias("datetime")
+        )
+        # Remove any non-existent data
+        df = df.fill_nan(None)
+        df_cleaned = df.select(
+            [pl.col(col) for col in df.columns if not df[col].is_null().all()]
+        )
+        return cls(df_cleaned, uid)
+
+    @classmethod
+    def from_csv(
+        cls,
+        path_x: str | os.PathLike,
+        path_y: str | os.PathLike,
+        path_z: str | os.PathLike,
+        uid: str = None,
+    ) -> RadixactSynchronyMotion:
+        """Extracts motion data from csv file representing a patient
+        treatment fraction fragment, taken from Motion Data Extractor tool.
+
+        Parameters
+        ----------
+        path_x : str | os.PathLike
+            Path to csv file containing IEC-X or left-right motion data.
+        path_y : str | os.PathLike
+            Path to csv file containing IEC-Y or superior-inferior motion data.
+        path_z : str | os.PathLike
+            Path to csv file containing IEC-Z or anterior-posterior motion data.
+        uid : str, optional
+            Unique identifier string, to allow association with other data. Defualt is
+            None.
+
+        Returns
+        -------
+        RadixactSynchronyMotion
+            The Radixact Synchrony Motion data encapsulated with helper functions.
+        """
+        times = np.loadtxt(path_x, delimiter=",", skiprows=1)[:, 0]
+        x_displacements = np.loadtxt(path_x, delimiter=",", skiprows=1)[:, 1]
+        y_displacements = np.loadtxt(path_y, delimiter=",", skiprows=1)[:, 1]
+        z_displacements = np.loadtxt(path_z, delimiter=",", skiprows=1)[:, 1]
+        return cls.from_array_likes(
+            times, x_displacements, y_displacements, z_displacements, uid=uid
+        )
+
+    # endregion
+
+    # region Magic methods
+
+    def __add__(self, other: RadixactSynchronyMotion) -> RadixactSynchronyMotion:
+        """Concatenates two motion datasets together.
+
+        Parameters
+        ----------
+        other : RadixactSynchronyMotion
+            The Radixact Synchrony Motion data to be concated to this motion data.
+
+        Returns
+        -------
+        RadixactSynchronyMotion
+            The Radixact Synchrony Motion data encapsulated with helper functions.
+
+        Raises
+        ------
+        TypeError
+            If either self or other is not Radixact Synchrony motion data.
+        """
+        if not isinstance(other, type(self)):
+            raise TypeError("Unsupported operand type for +")
+        return type(self)(pl.concat([self._df, other._df]))
+
+    def __radd__(self, other: RadixactSynchronyMotion) -> RadixactSynchronyMotion:
+        """Concatenates two motion datasets together, for sum() functions.
+
+        Parameters
+        ----------
+        other : RadixactSynchronyMotion
+            The Radixact Synchrony Motion data to be concatenated to this motion data.
+
+        Returns
+        -------
+        RadixactSynchronyMotion
+            The Radixact Synchrony Motion data encapsulated with helper functions.
+        """
+        if other == 0:
+            return self
+        else:
+            return self.__add__(other)
+
+    def __repr__(self) -> str:
+        """Returns an unambigious string representation of the object.
+
+        Returns
+        -------
+        str
+            Representation of the object.
+        """
+        return f"RadixactSynchronyMotion(uid={self._uid})"
+
+    # endregion
+
+    # region Properties
+
+    @cached_property
+    def metrics(self) -> pl.DataFrame:
+        """Calculates motion and adaptation metrics.
+
+        Returns
+        -------
+        pl.DataFrame
+            The calculated motion and adaptation metrics.
+        """
+        df_results = []
+        df_results.append(
+            self._df.select(
+                [
+                    (pl.col("delta_time").last() - pl.col("delta_time").first()).alias(
+                        "duration"
+                    ),
+                    pl.col("delta_time").count().alias("num_data_points"),
+                ]
+            )
+        )
+        # Calculate IEC-X, IEC-Y, IEC-Z metrics
+        for col in ["target_offset_x", "target_offset_y", "target_offset_z"]:
+            df_results.append(
+                self._df.select(
+                    [
+                        pl.col(col).mean().alias("mean_" + col),
+                        pl.col(col).std().alias("standard_deviation_" + col),
+                        pl.col(col).median().alias("median_" + col),
+                        (pl.col(col).quantile(0.75) - pl.col(col).quantile(0.25)).alias(
+                            "interquartile_range_" + col
+                        ),
+                        (pl.col(col).quantile(0.9) - pl.col(col).quantile(0.1)).alias(
+                            "interdecile_range_" + col
+                        ),
+                        (pl.col(col).quantile(0.95) - pl.col(col).quantile(0.05)).alias(
+                            "5pc_trimmed_range_" + col
+                        ),
+                        (pl.col(col).max() - pl.col(col).min()).alias("range_" + col),
+                        pl.col("delta_" + col).mean().alias("mean_delta_" + col),
+                        pl.col("delta_" + col).median().alias("median_delta_" + col),
+                    ]
                 )
             )
-            axs[1].fill_between(
-                range(len(all_y_offset)),
-                [np.percentile(data, 50 + (level / 2)) for data in all_y_offset],
-                [np.percentile(data, 50 - (level / 2)) for data in all_y_offset],
-                color=color,
+        # Calculate vector displacement and tracking metrics
+        for col in [
+            series
+            for series in [
+                "target_offset_vector",
+                "delta_target_offset_vector",
+                "potential_diff",
+                "rigid_body",
+                "measured_diff",
+            ]
+            if series in self._df.columns
+        ]:
+            df_results.append(
+                self._df.select(
+                    [
+                        pl.col(col).mean().alias("mean_" + col),
+                        pl.col(col).std().alias("standard_deviation_" + col),
+                        pl.col(col).median().alias("median_" + col),
+                        pl.col(col).quantile(0.8).alias("80th_percentile_" + col),
+                        pl.col(col).quantile(0.9).alias("90th_percentile_" + col),
+                        pl.col(col).quantile(0.95).alias("95th_percentile_" + col),
+                        pl.col(col).max().alias("maximum_" + col),
+                    ]
+                )
             )
-            axs[2].fill_between(
-                range(len(all_z_offset)),
-                [np.percentile(data, 50 + (level / 2)) for data in all_z_offset],
-                [np.percentile(data, 50 - (level / 2)) for data in all_z_offset],
-                color=color,
-            )
-        (l1,) = axs[0].plot(
-            range(len(all_x_offset)),
-            [np.median(data) for data in all_x_offset],
-            color=mpl.colormaps["Blues"](226),
-        )
-        plots.append(l1)
-        axs[1].plot(
-            range(len(all_x_offset)),
-            [np.median(data) for data in all_y_offset],
-            color=mpl.colormaps["Blues"](226),
-        )
-        axs[2].plot(
-            range(len(all_x_offset)),
-            [np.median(data) for data in all_z_offset],
-            color=mpl.colormaps["Blues"](226),
-        )
-        fig.legend(
-            plots,
-            ["Range", "IQR", "Median"],
-            loc="center right",
-            fancybox=True,
-            bbox_to_anchor=(1.05, 1),
-        )
-    axs[0].set_title("IEC-X (LR)", y=1.0, pad=-14)
-    axs[1].set_title("IEC-Y (SI)", y=1.0, pad=-14)
-    axs[2].set_title("IEC-Z (AP)", y=1.0, pad=-14)
-    axs[2].tick_params(labelbottom=False)
-    fig.supxlabel("Fraction")
-    fig.supylabel("Displacement (mm)")
-    fig.suptitle(title)
-    plt.savefig(png_filepath, bbox_inches="tight")
-
-
-def has_motion_data(patient_path: str):
-    """Check whether motion data exists within specific patient directory.
-
-    Parameters
-    ----------
-    patient_path : str
-        The path nominally containing *motionData.xml files.
-
-    Returns
-    -------
-    result : bool
-        True, if *motionData.xml found, otherwise False.
-
-    Notes
-    -----
-    If true, the specified directory should either correspond to an extracted Patient Data 
-    Extractor archive (containing .cdms files) or a patient cache used by the Delivery Analysis 
-    tool, located at C:/tomo/da/pts/URnumber/.
-    """
-    files = glob.glob(os.path.join(patient_path, "*motionData.xml"))
-    if len(files) > 0:
-        return True
-    files 
-
-
-def plot_vector_displacement_probability(
-    fraction_xml_paths: npt.ArrayLike,
-    png_filepath: str,
-    title: str,
-    offset_max: float = 5,
-    offset_bin: float = 0.25,
-    vector_max: float = 10,
-    vector_bin: float = 0.25,
-    stacked_colour_histogram: bool = False,
-):
-    """Plot vector displacement probability of motion data spanning multiple fractions.
-
-    Parameters
-    ----------
-    fraction_xml_paths : array_like
-        List containing lists of *motionData.xml paths for each fraction of one or
-        more treatments.
-    png_filepath : str
-        Path for PNG file to be written.
-    title : str
-        Title text to use for figure.
-    offset_max, vector_max : float
-        Displacement limit for plotting for IEC axes and vector (in mm, 5 and 10 default).
-    offset_bin, vector_bin : float
-        Width of displacement bin for histograms for IEC axes and vector (in mm, 0.25 default).
-    stacked_colour_histogram : bool
-        Flag to indicate whether to stack histogram bars according to time of displacement.
-    """
-    time_combined = []
-    x_displacements = []
-    y_displacements = []
-    z_displacements = []
-    disp_time_combined = []
-    v_displacements = []
-    for fraction in range(len(fraction_xml_paths)):
-        time, potential_diff, rigid_body, x_offset, y_offset, z_offset, meas_diff = (
-            read_motion_data(fraction_xml_paths[fraction])
-        )
-        time, potential_diff, rigid_body, x_offset, y_offset, z_offset, meas_diff, pauses = (
-            modify_motion_data(
-                time,
-                potential_diff,
-                rigid_body,
-                x_offset,
-                y_offset,
-                z_offset,
-                meas_diff,
-                zero_reference_point=True,
+        # Calculate adaptation metrics
+        df_results.append(
+            self._df.select(
+                [
+                    (
+                        (pl.col("target_offset_y").abs() > 12.5).sum()
+                        / pl.col("delta_time").count()
+                    ).alias("fraction_target_offset_y_exceeding_12.5"),
+                    (
+                        (pl.col("target_offset_y").abs() > 20).sum()
+                        / pl.col("delta_time").count()
+                    ).alias("fraction_target_offset_y_exceeding_20"),
+                    (
+                        (
+                            (
+                                (3.125 / pl.col("target_offset_lateral"))
+                                .arccos()
+                                .fill_nan(0)
+                                * 2
+                                / np.pi
+                            ).mean()
+                        ).alias("fraction_target_offset_xz_exceeding_3.125")
+                    ),
+                    (
+                        (
+                            (
+                                (4 / pl.col("target_offset_lateral"))
+                                .arccos()
+                                .fill_nan(0)
+                                * 2
+                                / np.pi
+                            ).mean()
+                        ).alias("fraction_target_offset_xz_exceeding_4")
+                    ),
+                ]
             )
         )
-        disp_time, disp = calculate_vector_displacements(
-            time, x_offset, y_offset, z_offset
-        )
-        time_combined = [*time_combined, *time]
-        disp_time_combined = [*disp_time_combined, *disp_time]
-        x_displacements = [*x_displacements, *x_offset]
-        y_displacements = [*y_displacements, *y_offset]
-        z_displacements = [*z_displacements, *z_offset]
-        v_displacements = [*v_displacements, *disp]
-    time_combined = np.array(time_combined)
-    disp_time_combined = np.array(disp_time_combined)
-    x_displacements = np.array(x_displacements)
-    y_displacements = np.array(y_displacements)
-    z_displacements = np.array(z_displacements)
-    v_displacements = np.array(v_displacements)
-    label = ["Displacement"]
-    if stacked_colour_histogram:
-        max_time = np.nanmax(time_combined)
-        num_stacks = int(max_time / 100) + 1
-        x_split = []
-        y_split = []
-        z_split = []
-        v_split = []
-        label = []
-        for stack in range(num_stacks):
-            mask_disp = (time_combined >= (stack * 100)) & (
-                time_combined < (stack * 100 + 100)
-            )
-            mask_vect = (disp_time_combined >= (stack * 100)) & (
-                disp_time_combined < (stack * 100 + 100)
-            )
-            x_split.append(x_displacements[mask_disp])
-            y_split.append(y_displacements[mask_disp])
-            z_split.append(z_displacements[mask_disp])
-            v_split.append(v_displacements[mask_vect])
-            label.append(str(stack * 100) + "-" + str(stack * 100 + 100) + " s")
-        x_displacements = x_split
-        y_displacements = y_split
-        z_displacements = z_split
-        v_displacements = v_split
-    fig, axs = plt.subplots(
-        ncols=4,
-        nrows=1,
-        gridspec_kw={"hspace": 0, "wspace": 0},
-        constrained_layout=True,
-        figsize=(9, 3),
-    )
-    axs[0].hist(
-        x_displacements,
-        list(np.arange(-offset_max, offset_max + offset_bin, offset_bin)),
-        density=False,
-        stacked=stacked_colour_histogram,
-    )
-    if not stacked_colour_histogram:
-        axs[0].axvline(np.nanmean(x_displacements), color="r")
-    axs[0].set_title("IEC-X")
-    axs[1].hist(
-        y_displacements,
-        list(np.arange(-offset_max, offset_max + offset_bin, offset_bin)),
-        density=False,
-        stacked=stacked_colour_histogram,
-    )
-    if not stacked_colour_histogram:
-        axs[1].axvline(np.nanmean(y_displacements), color="r")
-    axs[1].set_title("IEC-Y")
-    axs[2].hist(
-        z_displacements,
-        list(np.arange(-offset_max, offset_max + offset_bin, offset_bin)),
-        density=False,
-        stacked=stacked_colour_histogram,
-    )
-    if not stacked_colour_histogram:
-        axs[2].axvline(np.nanmean(z_displacements), color="r")
-    axs[2].set_title("IEC-Z")
-    axs[3].hist(
-        v_displacements,
-        list(np.arange(0, vector_max + vector_bin, vector_bin)),
-        density=False,
-        cumulative=-1,
-        stacked=stacked_colour_histogram,
-    )
-    axs[3].set_title("Vector")
-    if not stacked_colour_histogram:
-        axs[3].axvline(np.percentile(v_displacements, 95), color="r")
-        axs[3].text(
-            np.percentile(v_displacements, 95) + 0.5,
-            0.75 * len(v_displacements),
-            "$r_{95}$ = \n"
-            + "{:0.1f}".format(np.percentile(v_displacements, 95))
-            + "mm",
-            color="r",
-        )
-    fig.supylabel("Number of data points")
-    fig.supxlabel("Displacement (mm)")
-    fig.suptitle(title)
-    if stacked_colour_histogram:
-        fig.legend(
-            label,
-            title="Time period",
-            loc="center right",
-            fancybox=True,
-            bbox_to_anchor=(1.15, 0.5),
-        )
-    plt.savefig(png_filepath, bbox_inches="tight")
+        # Return combined calculated metrics
+        return pl.concat(df_results, how="horizontal")
 
+    # endregion
 
-def plot_patient_vector_displacement_probability(
-    patient_path: str, png_path: str, title: str, offset_max: float = 5,
-    offset_bin: float = 0.25, vector_max: float = 10, vector_bin: float=0.25, 
-    stacked_colour_histogram: bool = False
-):
-    """Plot vector displacement probability for motion data contained within specific
-    patient directory.
+    # region Public methods
 
-    Parameters
-    ----------
-    patient_path : str
-        The path containing the *motionData.xml files to be plotted.
-    png_filepath : str
-        Path for PNG file to be written.
-    title : str
-        Title text to use for figure.
-    stacked_colour_histogram : bool
-        Flag to indicate whether to stack histogram bars according to time of displacement.
+    def to_csv(self, path) -> None:
+        """Writes motion data to CSV file.
 
-    Notes
-    -----
-    The specified directory should either correspond to an extracted Patient Data Extractor
-    archive (containing .cdms files) or a patient cache used by the Delivery Analysis tool,
-    located at C:/tomo/da/pts/URnumber/.
-    """
-    motion_paths = patient_fraction_xml_lists(patient_path)
-    plot_vector_displacement_probability(
-        motion_paths,
-        png_path,
-        title,
-        offset_max=offset_max,
-        offset_bin=offset_bin,
-        vector_max=vector_max,
-        vector_bin=vector_bin,
-        stacked_colour_histogram=stacked_colour_histogram,
-    )
+        Parameters
+        ----------
+        path : str
+            Path for CSV file to be written.
 
+        Returns
+        -------
+        None
+        """
+        self._df.write_csv(path)
 
-def plot_cohort_vector_displacement_probability(
-    patient_paths: npt.ArrayLike, png_path: str, title: str, offset_max: float = 5,
-    offset_bin: float = 0.25, vector_max: float = 10,
-    vector_bin: float = 0.25, stacked_colour_histogram: bool = False
-):
-    """Plot vector displacement probability for motion data contained within cohort
-    directory, where motion data is nested in patient and Delivery Analysis folders.
+    # endregion
 
-    Parameters
-    ----------
-    patient_paths : array_like
-        The paths containing patient directories, with *motionData.xml files in XML specific
-        sub-directories, to be plotted.
-    png_filepath : str
-        Path for PNG file to be written.
-    title : str
-        Title text to use for figure.
-    stacked_colour_histogram : bool
-        Flag to indicate whether to stack histogram bars according to time of displacement.
+    # region Private methods
 
-    Notes
-    -----
-    The specified directory should correspond two levels higher than those cached in
-    C:/tomo/da/pts/URnumber/ when patient data is loaded within the Delivery Analysis tool.
-    """
+    # endregion
 
-    """motion_files = sorted(
-        glob.glob(os.path.join(cohort_path, "**/**/*motionData.xml")),
-        key=lambda x: float(
-            re.findall("(\d+.\d+)", x.split("-")[-2] + "." + x.split("-")[-1])[0]
-        ),
-    )
-    motion_paths = {}
-    for motion_file in motion_files:
-        id = (
-            "-".join(os.path.split(motion_file)[1].split("-")[0:-2])
-            + "-"
-            + os.path.split(motion_file)[1].split("-")[-2].zfill(2)
-        )
-        if id in motion_paths:
-            curr_list = motion_paths[id]
-            curr_list.append(motion_file)
-            motion_paths[id] = curr_list
-        else:
-            motion_paths[id] = [motion_file]
-    motion_paths = dict(sorted(motion_paths.items()))"""
-    motion_paths = cohort_fraction_xml_lists(patient_paths)
-    plot_vector_displacement_probability(
-        motion_paths,
-        png_path,
-        title,
-        offset_max,
-        offset_bin,
-        vector_max,
-        vector_bin,
-        stacked_colour_histogram=stacked_colour_histogram,
-    )
+    # region Static methods
 
-
-def analyse_motion_data(fraction_xml_paths: npt.ArrayLike, all_fraction_label="all"):
-    """Analyse motion data spanning multiple fractions.
-
-    Parameters
-    ----------
-    fraction_xml_paths : array_like
-        List containing lists of *motionData.xml paths for each fraction of one or
-        more treatments.
-    all_fraction_label : str
-        Text to be used in fraction column to indicate summary of treatment results.
-
-    Returns
-    -------
-    results : Pandas DataFrame
-        A dataframe containing data extracted from the XML files.
-    """
-    results = []
-    time_combined = []
-    potential_diff_combined = []
-    rigid_body_combined = []
-    meas_diff_combined = []
-    x_displacements = []
-    y_displacements = []
-    z_displacements = []
-    disp_time_combined = []
-    v_displacements = []
-    zero_x_displacements = []
-    zero_y_displacements = []
-    zero_z_displacements = []
-    zero_disp_time_combined = []
-    zero_v_displacements = []
-    header = [
-        "Fraction",
-        "Date",
-        "Time",
-        "Data acquisition duration",
-        "Number of delivery fragments",
-        "Pause duration",
-        "Active duration",
-        "Number of data points",
-        "IEC-X mean",
-        "IEC-X mean (zeroed)",
-        "IEC-X standard deviation",
-        "IEC-X median",
-        "IEC-X median (zeroed)",
-        "IEC-X IQR",
-        "IEC-X IDR",
-        "IEC-X range",
-        "IEC-Y mean",
-        "IEC-Y mean (zeroed)",
-        "IEC-Y standard deviation",
-        "IEC-Y median",
-        "IEC-Y median (zeroed)",
-        "IEC-Y IQR",
-        "IEC-Y IDR",
-        "IEC-Y range",
-        "IEC-Y exceeding 12.5mm fraction",
-        "IEC-Y exceeding 20mm fraction",
-        "IEC-Z mean",
-        "IEC-Z mean (zeroed)",
-        "IEC-Z standard deviation",
-        "IEC-Z median",
-        "IEC-Z median (zeroed)",
-        "IEC-Z IQR",
-        "IEC-Z IDR",
-        "IEC-Z range",
-        "Vector displacement mean",
-        "Vector displacement standard deviation",
-        "Vector displacement median",
-        "Vector displacement 80th percentile",
-        "Vector displacement 90th percentile",
-        "Vector displacement 95th percentile",
-        "Vector displacement maximum",
-        "Vector displacement mean (zeroed)",
-        "Vector displacement standard deviation (zeroed)",
-        "Vector displacement median (zeroed)",
-        "Vector displacement 80th percentile (zeroed)",
-        "Vector displacement 90th percentile (zeroed)",
-        "Vector displacement 95th percentile (zeroed)",
-        "Vector displacement maximum (zeroed)",
-        "Rigid body mean",
-        "Rigid body standard deviation",
-        "Rigid body median",
-        "Rigid body maximum",
-        "Measured difference mean",
-        "Measured difference standard deviation",
-        "Measured difference median",
-        "Measured difference maximum",
-        "Estimated MLC adaptation fraction",
-    ]
-
-    def extract_metrics(x_data, y_data, z_data, disp_data, x_data_0, y_data_0, z_data_0, disp_data_0, rigid_body_data, meas_diff_data):
-        metrics = []
-        metrics.append(len(x_data))
-        metrics.append(np.nanmean(x_data))
-        metrics.append(np.nanmean(x_data_0))
-        metrics.append(np.nanstd(x_data))
-        metrics.append(np.nanmedian(x_data))
-        metrics.append(np.nanmedian(x_data_0))
-        metrics.append(np.nanpercentile(x_data, 75) - np.nanpercentile(x_data, 25))
-        metrics.append(np.nanpercentile(x_data, 90) - np.nanpercentile(x_data, 10))
-        metrics.append(np.nanmax(x_data) - np.nanmin(x_data))
-        metrics.append(np.nanmean(y_data))
-        metrics.append(np.nanmean(y_data_0))
-        metrics.append(np.nanstd(y_data))
-        metrics.append(np.nanmedian(y_data))
-        metrics.append(np.nanmedian(y_data_0))
-        metrics.append(np.nanpercentile(y_data, 75) - np.nanpercentile(y_data, 25))
-        metrics.append(np.nanpercentile(y_data, 90) - np.nanpercentile(y_data, 10))
-        metrics.append(np.nanmax(y_data) - np.nanmin(y_data))
-        metrics.append(np.sum(np.abs(y_data) > 12.5) / len(y_data))
-        metrics.append(np.sum(np.abs(y_data) > 20) / len(y_data))
-        metrics.append(np.nanmean(z_data))
-        metrics.append(np.nanmean(z_data_0))
-        metrics.append(np.nanstd(z_data))
-        metrics.append(np.nanmedian(z_data))
-        metrics.append(np.nanmedian(z_data_0))
-        metrics.append(np.nanpercentile(z_data, 75) - np.nanpercentile(z_data, 25))
-        metrics.append(np.nanpercentile(z_data, 90) - np.nanpercentile(z_data, 10))
-        metrics.append(np.nanmax(z_data) - np.nanmin(z_data))
-        metrics.append(np.nanmean(disp_data))
-        metrics.append(np.nanstd(disp_data))
-        metrics.append(np.nanmedian(disp_data))
-        metrics.append(np.percentile(disp_data, 80))
-        metrics.append(np.percentile(disp_data, 90))
-        metrics.append(np.percentile(disp_data, 95))
-        metrics.append(np.nanmax(disp_data))
-        metrics.append(np.nanmean(disp_data_0))
-        metrics.append(np.nanstd(disp_data_0))
-        metrics.append(np.nanmedian(disp_data_0))
-        metrics.append(np.percentile(disp_data_0, 80))
-        metrics.append(np.percentile(disp_data_0, 90))
-        metrics.append(np.percentile(disp_data_0, 95))
-        metrics.append(np.nanmax(disp_data_0))
-        metrics.append(np.nanmean(rigid_body_data))
-        metrics.append(np.nanstd(rigid_body_data))
-        metrics.append(np.nanmedian(rigid_body_data))
-        metrics.append(np.nanmax(rigid_body_data))
-        metrics.append(np.nanmean(meas_diff_data))
-        metrics.append(np.nanstd(meas_diff_data))
-        metrics.append(np.nanmedian(meas_diff_data))
-        metrics.append(np.nanmax(meas_diff_data))
-        metrics.append(np.mean(np.nan_to_num(np.arccos(3.125/(np.sqrt(np.square(x_data) + np.square(z_data))))*2/np.pi)))
-        return metrics
-
-    for fraction in range(len(fraction_xml_paths)):
-        time, potential_diff, rigid_body, x_offset, y_offset, z_offset, meas_diff = (
-            read_motion_data(fraction_xml_paths[fraction])
-        )
-        str_date = datetime.datetime.fromtimestamp(time[0]).strftime("%d/%m/%Y")
-        str_time = datetime.datetime.fromtimestamp(time[0]).strftime("%H:%M:%S")
-        time, potential_diff, rigid_body, x_offset, y_offset, z_offset, meas_diff, pauses = (
-            modify_motion_data(
-                time,
-                potential_diff,
-                rigid_body,
-                x_offset,
-                y_offset,
-                z_offset,
-                meas_diff,
-                remove_duplicates=True,
-                remove_variable_pauses=False,
-            )
-        )
-        (
-            zero_time,
-            zero_potential_diff,
-            zero_rigid_body,
-            zero_x_offset,
-            zero_y_offset,
-            zero_z_offset,
-            zero_meas_diff,
-            zero_pauses,
-        ) = modify_motion_data(
-            time,
-            potential_diff,
-            rigid_body,
-            x_offset,
-            y_offset,
-            z_offset,
-            meas_diff,
-            remove_variable_pauses=False,
-            zero_reference_point=True,
-        )
-        disp_time, disp = calculate_vector_displacements(
-            time, x_offset, y_offset, z_offset
-        )
-        zero_disp_time, zero_disp= calculate_vector_displacements(
-            zero_time, zero_x_offset, zero_y_offset, zero_z_offset
-        )
-        time_combined = [*time_combined, *zero_time]
-        potential_diff_combined = [*potential_diff_combined, *potential_diff]
-        rigid_body_combined = [*rigid_body_combined, *rigid_body]
-        disp_time_combined = [*disp_time_combined, *disp_time]
-        meas_diff_combined = [*meas_diff_combined, *meas_diff]
-        x_displacements = [*x_displacements, *x_offset]
-        y_displacements = [*y_displacements, *y_offset]
-        z_displacements = [*z_displacements, *z_offset]
-        v_displacements = [*v_displacements, *disp]
-        zero_x_displacements = [*zero_x_displacements, *zero_x_offset]
-        zero_y_displacements = [*zero_y_displacements, *zero_y_offset]
-        zero_z_displacements = [*zero_z_displacements, *zero_z_offset]
-        zero_v_displacements = [*zero_v_displacements, *zero_disp]
-        fraction_results = [fraction + 1]
-        fraction_results.append(str_date)
-        fraction_results.append(str_time)
-        fraction_results.append(time[-1] - time[0])
-        fraction_results.append(len(pauses) + 1)
-        pause_duration = 0
-        for pause in pauses:
-            pause_duration += pause[1] - pause[0]
-        fraction_results.append(pause_duration)
-        fraction_results.append((time[-1] - time[0]) - pause_duration)
-        fraction_results = fraction_results + extract_metrics(
-            x_offset, y_offset, z_offset, disp, zero_x_offset, zero_y_offset, zero_z_offset, zero_disp, rigid_body, meas_diff
-        )
-        results.append(fraction_results)
-    return_result = pd.DataFrame(results, columns=header)
-    cumulative_result = [all_fraction_label]
-    cumulative_result.append("N/A")
-    cumulative_result.append("N/A")
-    cumulative_result.append(return_result[header[3]].sum())
-    cumulative_result.append(return_result[header[4]].sum())
-    cumulative_result.append(return_result[header[5]].sum())
-    cumulative_result.append(return_result[header[6]].sum())
-    cumulative_result = cumulative_result + extract_metrics(
-        x_displacements,
-        y_displacements,
-        z_displacements,
-        v_displacements,
-        zero_x_displacements,
-        zero_y_displacements,
-        zero_z_displacements,
-        zero_v_displacements,
-        rigid_body_combined,
-        meas_diff_combined,
-    )
-    return_result.loc[len(return_result.index)] = cumulative_result
-    return return_result
-
-
-def analyse_patient_motion_data(patient_path: str):
-    """Analyse motion data contained within specific patient directory.
-
-    Parameters
-    ----------
-    patient_path : str
-        The path containing the *motionData.xml files to be plotted.
-
-    Notes
-    -----
-    The specified directory should correspond with those cached in C:/tomo/da/pts/URnumber/
-    when patient data is loaded within the Delivery Analysis tool.
-    """
-    motion_paths = patient_fraction_xml_lists(patient_path)
-    return analyse_motion_data(motion_paths)
-
-
-def calculate_fragment_durations(time: npt.ArrayLike):
-    durations = []
-    frag_start = np.NaN
-    last_value = np.NaN
-    for i in range(len(time)):
-        if np.isnan(time[i]):
-            if not np.isnan(frag_start):
-                durations.append(last_value - frag_start)
-            frag_start = np.NaN
-            last_value = np.NaN
-        else:
-            if np.isnan(frag_start):
-                frag_start = time[i]
-            last_num = time[i]
-    return durations
-
-
-def plot_fragment_duration_histogram(
-    fraction_xml_paths: npt.ArrayLike,
-    png_filepath: str,
-    title: str,
-    bin_width: float = 100,
-):
-    """Plot delivery fragment duration histogram using motion data spanning multiple fractions.
-
-    Parameters
-    ----------
-    fraction_xml_paths : array_like
-        List containing lists of *motionData.xml paths for each fraction of one or
-        more treatments.
-    png_filepath : str
-        Path for PNG file to be written.
-    title : str
-        Title text to use for figure.
-    bin_width : float
-        Width of bin for histogram.
-    """
-    durations = []
-    for fraction in range(len(fraction_xml_paths)):
-        time, potential_diff, rigid_body, x_offset, y_offset, z_offset = (
-            read_motion_data(fraction_xml_paths[fraction])
-        )
-        time, potential_diff, rigid_body, x_offset, y_offset, z_offset, pauses = (
-            modify_motion_data(
-                time,
-                potential_diff,
-                rigid_body,
-                x_offset,
-                y_offset,
-                z_offset,
-                remove_duplicates=True,
-                remove_variable_pauses=False,
-            )
-        )
-        durations = [*durations, *calculate_fragment_durations(time)]
-    bins = np.arange(0, np.max(durations) + bin_width, bin_width)
-    fig, axs = plt.subplots(
-        ncols=1,
-        nrows=1,
-        gridspec_kw={"hspace": 0, "wspace": 0},
-        constrained_layout=True,
-        figsize=(9, 3),
-    )
-    axs.hist(time, bins)
-    fig.supylabel("Number of delivery fragments")
-    fig.supxlabel("Delivery fragment duration (s)")
-    fig.suptitle(title)
-    plt.savefig(png_filepath, bbox_inches="tight")
-
-
-def plot_cohort_fragment_duration(cohort_path: str, png_path: str, title: str):
-    """Plot delivery fragment duration histogram using motion data spanning multiple
-    directories, where motion data is nested in patient and Delivery Analysis folders.
-
-    Parameters
-    ----------
-    cohort_path : str
-        The path containing patient directories, with *motionData.xml files in XML specific
-        sub-directories, to be plotted.
-    png_filepath : str
-        Path for PNG file to be written.
-    title : str
-        Title text to use for figure.
-
-    Notes
-    -----
-    The specified directory should correspond two levels higher than those cached in
-    C:/tomo/da/pts/URnumber/ when patient data is loaded within the Delivery Analysis tool.
-    """
-    motion_files = sorted(
-        glob.glob(os.path.join(cohort_path, "**/**/*motionData.xml")),
-        key=lambda x: float(
-            re.findall("(\d+.\d+)", x.split("-")[-2] + "." + x.split("-")[-1])[0]
-        ),
-    )
-    motion_paths = {}
-    for motion_file in motion_files:
-        id = (
-            "-".join(os.path.split(motion_file)[1].split("-")[0:-2])
-            + "-"
-            + os.path.split(motion_file)[1].split("-")[-2].zfill(2)
-        )
-        if id in motion_paths:
-            curr_list = motion_paths[id]
-            curr_list.append(motion_file)
-            motion_paths[id] = curr_list
-        else:
-            motion_paths[id] = [motion_file]
-    motion_paths = dict(sorted(motion_paths.items()))
-    plot_fragment_duration_histogram(list(motion_paths.values()), png_path, title)
+    # endregion
