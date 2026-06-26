@@ -145,3 +145,4 @@ ENV/
 .vscode/
 
 # gitignore
+*scratch*
