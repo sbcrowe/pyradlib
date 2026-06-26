@@ -52,6 +52,7 @@ class RadixactDataset:
         """
         self._files = files
         self._label = label
+        logger.debug(f"Dataset contains {len(self._files)} files")
 
     @classmethod
     def from_data_extractor(cls, path, label: str = None) -> RadixactDataset:
@@ -73,9 +74,7 @@ class RadixactDataset:
         The specified path should correspond to a Patient Data Extractor folder,
         containing a PatientExportDataBO.xml file.
         """
-        dataset = cls()
-        dataset._files = cls._extractor_data_files_dataframe(path)
-        logger.debug(f"Dataset contains {len(dataset._files)} files")
+        dataset = cls(cls._extractor_data_files_dataframe(path))
         return dataset
 
     @classmethod
@@ -113,11 +112,11 @@ class RadixactDataset:
         RadixactDataset
             The encapsulated dataset object.
         """
-        dataset = cls()
-        dataset._files = cls._categorise_data_files_dataframe(
-            pl.DataFrame({"curr_path": paths}), series_name="curr_path"
+        return cls(
+            cls._categorise_data_files_dataframe(
+                pl.DataFrame({"curr_path": paths}), series_name="curr_path"
+            )
         )
-        return dataset
 
     # endregion
 
