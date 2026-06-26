@@ -56,7 +56,7 @@ class RadixactSinogram:
         path : str | os.PathLike
             Path to the .dcm file.
         uid : str, optional
-            Unique identifier associated with the data. Default is None, in which case 
+            Unique identifier associated with the data. Default is None, in which case
             a UID from the DICOM file will be used.
 
         Returns
@@ -85,7 +85,7 @@ class RadixactSinogram:
             # TODO Extract a UID from DCM file.
             dicom_uid = None
             return cls(df, dicom_uid)
-        else: 
+        else:
             return cls(df, uid)
 
     @classmethod
@@ -515,9 +515,7 @@ class RadixactSinogram:
         df = self._df
         df = df.with_columns(
             timestamp=pl.Series(
-                np.interp(
-                    x=df["tau"], xp=timing.data["tau"], fp=timing.data["timestamp"]
-                )
+                np.interp(x=df["tau"], xp=timing._df["tau"], fp=timing._df["timestamp"])
             )
         )
         df = df.with_columns(
@@ -956,8 +954,8 @@ class RadixactSinogram:
         # Calculate pause time
         interrupts = np.unique(
             (
-                np.array(telemetry_timing.data["tau"][1:])
-                - telemetry_timing.data["tau"][0]
+                np.array(telemetry_timing._df["tau"][1:])
+                - telemetry_timing._df["tau"][0]
             )[:-1]
         )
         # Get image data
