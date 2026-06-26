@@ -10,6 +10,10 @@ The following terms are used in describing granularity of Radixact delivery data
 - Period, for Synchrony treatments, to distinguish between time building a correlation model and time delivering the treatment, within a given delivery segment.
 
 ## Displacement metrics and figures
+The plan complexity metrics have been taken from or otherwise inspired by the articles below.
+> Cavinato S, Fusella M, Paiusco M, Scaggion A (2023). Quantitative assessment of helical tomotherapy plans complexity. *J Appl Clin Med Phys*, 24(1), e13781. DOI:[10.1002/acm2.13781](https://doi.org/10.1002/acm2.13781).
+> 
+
 The displacement distribution metrics and figures implemented have been taken from or otherwise inspired by the articles below.
 R<sub>80</sub>, R<sub>90</sub>, R<sub>95</sub>.
-> H. S. Li, I. J. Chetty, C. A. Enke, R. D. Foster, T. R. Willoughby, P. A. Kupellian, T. D. Solbertg, "Dosimetric consequences of intrafraction prostate motion," Int. J. Radiat. Oncol. Bio. Phys. 71(3): 801-812 (2008). DOI:[10.1016/j.ijrobp.2007.10.049](https://doi.org/10.1016/j.ijrobp.2007.10.049).
+> Li HS, Chetty IJ, Enke CA, Foster RD, Willoughby TR, Kupellian PA, Solberg TD (2008). Dosimetric consequences of intrafraction prostate motion. *Int J Radiat Oncol Bio Phys*, 71(3), 801-812. DOI:[10.1016/j.ijrobp.2007.10.049](https://doi.org/10.1016/j.ijrobp.2007.10.049).
