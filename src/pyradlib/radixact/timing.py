@@ -12,6 +12,7 @@ __credits__ = []
 __license__ = "GPL3"
 
 # import required code
+import os
 from functools import cached_property
 
 import numpy as np
@@ -20,7 +21,7 @@ import polars as pl
 
 class RadixactTiming:
     # region Constructors
-    def __init__(self, df: pl.DataFrame, uid: str = None):
+    def __init__(self, df: pl.DataFrame, uid: str = None) -> RadixactTiming:
         """Initialises an object corresponding to telemetry timing.
 
         Parameters
@@ -30,17 +31,22 @@ class RadixactTiming:
         uid : str, optional
             Unique identifier string, to allow association with telemetry fluence data.
             Default is None.
+
+        Returns
+        -------
+        RadixactTiming
+            DataFrame encapsulated with helper functions.
         """
         self._df = df
         self._uid = uid
 
     @classmethod
-    def from_dat(cls, path: str, uid: str = None):
+    def from_dat(cls, path: str | os.PathLike, uid: str = None) -> RadixactTiming:
         """Reads telemetry timing from a .dat file.
 
         Parameters
         ----------
-        path : str
+        path : str | os.PathLike
             Path to the .dat file.
         uid : str, optional
             Unique identifier string, to allow association with telemetry fluence data.
@@ -108,7 +114,7 @@ class RadixactTiming:
 
     # region Magic methods
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         """Returns an unambigious string representation of the object.
 
         Returns
