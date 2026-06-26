@@ -21,7 +21,11 @@ import polars as pl
 import pydicom
 
 from pyradlib.radixact.motion import RadixactSynchronyMotion
-from pyradlib.radixact.plan import RadixactPlanSettings
+from pyradlib.radixact.plan import (
+    RadixactPlan,
+    RadixactPlanDetails,
+    RadixactPlanSettings,
+)
 from pyradlib.radixact.sinogram import RadixactSinogram
 from pyradlib.radixact.timing import RadixactTiming
 
@@ -31,31 +35,38 @@ logger = logging.getLogger(__name__)
 class RadixactDataset:
     # region Constructors
 
-    def __init__(self, label: str = None):
-        self.label = label
-        self.files = None
+    def __init__(self, files: pl.DataFrame, label: str = None) -> RadixactDataset:
+        """Initialises an object corresponding to a Radixact patient dataset.
+
+        Parameters
+        ----------
+        files : pl.DataFrame
+            DataFrame containing the files comprising the dataset.
+        label : str, optional
+            Label string, to allow identification of dataset, by . Default is None.
+
+        Returns
+        -------
+        RadixactDataset
+            The encapsulated dataset object.
         """
-        self.plans = {}
-        self.plan_reports = {}
-        self.plan_settings = {}
-        self.fraction_records = {}
-        self.fraction_motions = {}
-        self.fraction_telemetry_sinograms = {}
-        self.fraction_detector_sinograms = {}
-        """
+        self._files = files
+        self._label = label
 
     @classmethod
-    def from_data_extractor(cls, path):
-        """
+    def from_data_extractor(cls, path, label: str = None) -> RadixactDataset:
+        """Reads dataset from a Patient Data Extractor folder.
 
         Parameters
         ----------
         path : str
             Path to the patient data folder.
+        label : str, optional
 
         Returns
         -------
         RadixactDataset
+            The encapsulated dataset object.
 
         Notes
         -----
@@ -63,13 +74,13 @@ class RadixactDataset:
         containing a PatientExportDataBO.xml file.
         """
         dataset = cls()
-        dataset.files = cls._extractor_data_files_dataframe(path)
-        logger.debug(f"Dataset contains {len(dataset.files)} files")
+        dataset._files = cls._extractor_data_files_dataframe(path)
+        logger.debug(f"Dataset contains {len(dataset._files)} files")
         return dataset
 
     @classmethod
-    def from_delivery_analysis(cls, path):
-        """
+    def from_delivery_analysis(cls, path) -> RadixactDataset:
+        """Reads dataset from a Delivery Analysis folder.
 
         Parameters
         ----------
@@ -79,6 +90,7 @@ class RadixactDataset:
         Returns
         -------
         RadixactDataset
+            The encapsulated dataset object.
 
         Notes
         -----
@@ -89,7 +101,7 @@ class RadixactDataset:
         return cls.from_path_list(sorted(os.listdir(path)))
 
     @classmethod
-    def from_path_list(cls, paths: list[str]):
+    def from_path_list(cls, paths: list[str]) -> RadixactDataset:
         """
         Parameters
         ----------
@@ -99,9 +111,10 @@ class RadixactDataset:
         Returns
         -------
         RadixactDataset
+            The encapsulated dataset object.
         """
         dataset = cls()
-        dataset.files = cls._categorise_data_files_dataframe(
+        dataset._files = cls._categorise_data_files_dataframe(
             pl.DataFrame({"curr_path": paths}), series_name="curr_path"
         )
         return dataset
@@ -110,12 +123,29 @@ class RadixactDataset:
 
     # region Magic methods
 
+    def __repr__(self) -> str:
+        """Returns an unambigious string representation of the object.
+
+        Returns
+        -------
+        str
+            Representation of the object.
+        """
+        return f"RadixactDataset(label={self._label})"
+
     # endregion
 
     # region Properties
 
     @cached_property
-    def detector_sinograms(self):
+    def detector_sinograms(self) -> list[RadixactSinogram]:
+        """Returns list containing detector sinograms.
+
+        Returns
+        -------
+        list[RadixactSinogram]
+            List of detector sinograms for each delivery session in the dataset.
+        """
         # TODO Potentially include orig_path or curr_path.split("-")[-3] as plan_uid,
         # [-2] as fraction number, and [-1].replace(".det", "") as fragment.
         detector_sinograms = []
@@ -138,7 +168,14 @@ class RadixactDataset:
             return detector_sinograms
 
     @cached_property
-    def dose_distributions(self):
+    def dose_distributions(self) -> list[pydicom.Dataset]:
+        """Returns list containing dose distributions.
+
+        Returns
+        -------
+        list[pydicom.Dataset]
+            List of dose distributions for each plan in the dataset.
+        """
         # TODO Potentially include orig_path or curr_path.split("-")[-2] as fraction number
         # or include entire UID from orig_path or curr_path.
         dose_distributions = []
@@ -160,6 +197,13 @@ class RadixactDataset:
 
     @cached_property
     def motion(self) -> RadixactSynchronyMotion:
+        """Returns concatenated motion data.
+
+        Returns
+        -------
+        RadixactSynchronyMotion
+            Concated Synchrony motion data from the dataset.
+        """
         if len(self.motions) == 0:
             return None
         else:
@@ -169,6 +213,13 @@ class RadixactDataset:
 
     @cached_property
     def motions(self) -> list[RadixactSynchronyMotion]:
+        """Returns list containing motion data.
+
+        Returns
+        -------
+        list[RadixactSynchronyMotion]
+            List of Synchrony motion data from each delivery session in the dataset.
+        """
         # TODO Potentially include orig_path or curr_path.split("-")[-2] as fraction number
         # or include entire UID from orig_path or curr_path.
         motions = []
@@ -184,7 +235,14 @@ class RadixactDataset:
             return motions
 
     @cached_property
-    def plans(self) -> list[pydicom.Dataset]:
+    def plans(self) -> list[RadixactPlan]:
+        """Reurns list containing treatment plans.
+
+        Returns
+        -------
+        list[RadixactPlan]
+            List of treatment plans in the dataset.
+        """
         # TODO Potentially extract ds.BeamSequence[0].DeviceSerialNumber and
         # ds.RTPlanLabel to be used as identifiers in a dictionary.
         plans = []
@@ -197,12 +255,19 @@ class RadixactDataset:
         else:
             for plan_file in plan_files:
                 logger.debug(f"Loading {plan_file}")
-                plans.append(pydicom.dcmread(plan_file))
+                plans.append(RadixactPlan.from_dcm(plan_file))
             logger.info(f"Loaded {len(plans)} plan files")
             return plans
 
     @cached_property
-    def plan_details(self):
+    def plan_details(self) -> list[RadixactPlanDetails]:
+        """Returns list containing treatment plan details.
+
+        Returns
+        -------
+        list[RadixactPlanDetails]
+            List of treatment plan details in the dataset.
+        """
         plan_details = []
         plan_detail_files = self._get_filtered_series_list(
             "Plan Details", series="curr_path"
@@ -214,13 +279,20 @@ class RadixactDataset:
             for plan_detail_file in plan_detail_files:
                 logger.debug(f"Loading {plan_detail_file}")
                 plan_details.append(
-                    RadixactPlanSettings.from_plan_settings(plan_detail_file)
+                    RadixactPlanDetails.from_plan_settings(plan_detail_file)
                 )
             logger.info(f"Loaded {len(plan_details)} plan detail files")
             return plan_details
 
     @cached_property
-    def plan_settings(self):
+    def plan_settings(self) -> list[RadixactPlanSettings]:
+        """Returns list containing treatment plan settings.
+
+        Returns
+        -------
+        list[RadixactPlanSettings]
+            List of treatment plan settings in the dataset.
+        """
         plan_settings = []
         plan_setting_files = self._get_filtered_series_list(
             "Plan Settings", series="curr_path"
@@ -238,7 +310,14 @@ class RadixactDataset:
             return plan_settings
 
     @cached_property
-    def plan_sinograms(self) -> RadixactSinogram:
+    def plan_sinograms(self) -> list[RadixactSinogram]:
+        """Returns list containing plan sinograms.
+
+        Returns
+        -------
+        list[RadixactSinogram]
+            List of treatment plan sinograms in the dataset.
+        """
         # TODO Potentially include orig_path or curr_path.split("~")[-2] as fraction number
         # or include entire UID from orig_path or curr_path.
         plan_sinograms = []
@@ -256,7 +335,14 @@ class RadixactDataset:
             return plan_sinograms
 
     @cached_property
-    def radiation_records(self):
+    def radiation_records(self) -> list[pydicom.Dataset]:
+        """Returns list containing fractional delivery radiation records.
+
+        Returns
+        -------
+        list[pydicom.Dataset]
+            List of radiation records in the dataset.
+        """
         # TODO Potentially include ds.ReferenceRTPlanSequence[0].ReferenceSOPInstanceUID,
         # which matches ReferenceSOPInstanceUID in the RTPLAN, also ds.InstanceNumber,
         # which includes fraction_number as instance[:-2] and session as instance[-2:]
@@ -275,7 +361,14 @@ class RadixactDataset:
             return radiation_records
 
     @cached_property
-    def structure_sets(self):
+    def structure_sets(self) -> list[pydicom.Dataset]:
+        """Returns list containing structure sets.
+
+        Returns
+        -------
+        list[pydicom.Dataset]
+            List of structure sets in the dataset.
+        """
         structure_sets = []
         structure_set_files = self._get_filtered_series_list(
             "Structure Set", series="curr_path"
@@ -292,6 +385,13 @@ class RadixactDataset:
 
     @cached_property
     def telemetry_sinograms(self) -> list[RadixactSinogram]:
+        """Returns list containing telemetry sinograms from fractional deliveries.
+
+        Returns
+        -------
+        list[RadixactSinogram]
+            List of telemetry sinograms in the dataset.
+        """
         # TODO Potentially include orig_path or curr_path.split("-")[-3] as plan uid,
         # [-2] as fraction and [1] as fragment, or include entire UID from orig_path
         # or curr_path.
@@ -308,7 +408,7 @@ class RadixactDataset:
         else:
             if len(telemetry_sinogram_files) == len(self.telemetry_timings):
                 telemetry_timing_dict = {
-                    timing.uid: timing for timing in self.telemetry_timings
+                    timing._uid: timing for timing in self.telemetry_timings
                 }
             for (
                 telemetry_sinogram_file,
@@ -338,6 +438,13 @@ class RadixactDataset:
 
     @cached_property
     def telemetry_timings(self) -> list[RadixactTiming]:
+        """Returns list containing telemetry timings from fractional deliveries.
+
+        Returns
+        -------
+        list[RadixactTiming]
+            List of telemetry timings in the dataset.
+        """
         telemetry_timings = []
         telemetry_timing_files = self._get_filtered_series_list(
             "Telemetry Timing", series="curr_path"
@@ -372,16 +479,23 @@ class RadixactDataset:
     # region Private methods
 
     def _get_filtered_series_list(self, type: str, series="curr_path") -> list[str]:
-        """
+        """Returns a list of paths for files with specified type filter.
+
         Parameters
         ----------
         type : str
             The type (of file) to use as a filter.
         series : str, optional
             The series name, or column name, of the series to be returned as a list.
+            Default is "curr_path".
+
+        Returns
+        -------
+        list[str]
+            List of file paths for filtered type.
         """
         # TODO verify series / column name is valid
-        result = self.files.filter(pl.col("type") == type).get_column(series).to_list()
+        result = self._files.filter(pl.col("type") == type).get_column(series).to_list()
         return result
 
     # endregion
@@ -400,6 +514,11 @@ class RadixactDataset:
         filter : bool, optional
             Flag to remove unknown or redundant files from the resultant dataframe.
             Default is true.
+
+        Returns
+        -------
+        pl.DataFrame
+            DataFrame containing all dataset files contained in a specified path.
         """
         # instantiate result and schema
         result = []
@@ -472,6 +591,11 @@ class RadixactDataset:
         series_name : str, optional
             Name of series or column to be used for categorisation. Default is
             "curr_path".
+
+        Returns
+        -------
+        pl.DataFrame
+            DataFrame containing file paths categorised according to file type.
         """
         return df.with_columns(
             pl.when(pl.col(series_name).str.contains("(?i)detectorbyproj"))
