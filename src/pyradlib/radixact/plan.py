@@ -12,6 +12,7 @@ __credits__ = []
 __license__ = "GPL3"
 
 # import required code
+import os
 import xml.etree.ElementTree as et
 from functools import cached_property
 
@@ -24,11 +25,35 @@ import pydicom
 class RadixactPlan:
     # region Constructors
 
-    def __init__(self, ds: pydicom.Dataset):
+    def __init__(self, ds: pydicom.Dataset) -> RadixactPlan:
+        """Initialises the Radixact plan class.
+
+        Parameters
+        ----------
+        ds : pydicom.Dataset
+            DICOM RTPLAN dataset.
+
+        Returns
+        -------
+        RadixactPlan
+            The DICOM treatment plan wrapped in a helper class.
+        """
         self._ds = ds
 
     @classmethod
-    def from_dcm(cls, path: str):
+    def from_dcm(cls, path: str | os.PathLike) -> RadixactPlan:
+        """Reads treatment plan from DICOM RTPLAN file.
+
+        Parameters
+        ----------
+        path : str | os.PathLike
+            Path to the DICOM RTPLAN file.
+
+        Returns
+        -------
+        RadixactPlan
+            The DICOM treatment plan wrapped in a helper class.
+        """
         ds = pydicom.read_file(path)
         return cls(ds)
 
@@ -41,7 +66,14 @@ class RadixactPlan:
     # region Properties
 
     @cached_property
-    def summary(self):
+    def summary(self) -> pl.DataFrame:
+        """Produce summary of treatment plan parameters.
+
+        Returns
+        -------
+        pl.DataFrame
+            DataFrame containing treatment plan parameters.
+        """
         result = {}
         result["urn"] = self._ds.PatientID
         # TODO Manage names that aren't in format SMITH^JOHN
@@ -107,14 +139,6 @@ class RadixactPlan:
 
     # endregion
 
-    # region Public methods
-
-    # endregion
-
-    # region Private methods
-
-    # endregion
-
 
 # endregion
 
@@ -124,11 +148,35 @@ class RadixactPlan:
 class RadixactPlanDetails:
     # region Constructors
 
-    def __init__(self, df: pl.DataFrame):
+    def __init__(self, df: pl.DataFrame) -> RadixactPlanDetails:
+        """Initialise plan detail wrapper.
+
+        Parameters
+        ----------
+        df : pl.DataFrame
+            DataFrame containing plan details.
+
+        Returns
+        -------
+        RadixactPlanDetails
+            Plan details in helper wrapper.
+        """
         self._df = df
 
     @classmethod
-    def from_xml(cls, path: str):
+    def from_xml(cls, path: str | os.PathLike) -> RadixactPlanDetails:
+        """Read plan details from an XML file.
+
+        Parameters
+        ----------
+        path : str | os.PathLike
+            Path to the plan detail xml file.
+
+        Returns
+        -------
+        RadixactPlanDetails
+            Plan details in helper wrapper.
+        """
         details = {}
         tree = et.parse(path)
         root = tree.getroot()
@@ -158,18 +206,34 @@ class RadixactPlanDetails:
 class RadixactPlanInformation:
     # region Constructors
 
-    def __init__(self, df: pl.DataFrame, objectives: pl.DataFrame = None):
+    def __init__(
+        self, df: pl.DataFrame, objectives: pl.DataFrame = None
+    ) -> RadixactPlanInformation:
+        """Initialises a plan information wrapper.
+
+        Parameters
+        ----------
+        df : pl.DataFrame
+            Plan information dataframe.
+        objectives : pl.DataFrame, optional
+            Dose objectives dataframe. Default is default None.
+
+        Returns
+        -------
+        RadixactPlanInformation
+            Plan information data, in helper wrapper.
+        """
         self._df = df
         self._objectives = objectives
 
     @classmethod
-    def from_xml(cls, path: str) -> RadixactPlanInformation:
+    def from_xml(cls, path: str | os.PathLike) -> RadixactPlanInformation:
         """Reads general plan and dose objective information from a GeneralPlan*.xml
         file.
 
         Parameters
         ----------
-        path : str
+        path: str | os.PathLike
             Path to the GeneralPlan*.xml file.
 
         Returns
@@ -281,16 +345,28 @@ class RadixactPlanInformation:
 class RadixactPlanSettings:
     # region Constructors
 
-    def __init__(self, df: pl.DataFrame):
+    def __init__(self, df: pl.DataFrame) -> RadixactPlanSettings:
+        """Initialise plan settings class.
+
+        Parameters
+        ----------
+        df : pl.DataFrame
+            The plan settings dataframe.
+
+        Returns
+        -------
+        RadixactPlanSettings
+            Plan settings encapsulated in helping wrapper.
+        """
         self._df = df
 
     @classmethod
-    def from_plan_settings(cls, path: str) -> RadixactPlanSettings:
+    def from_plan_settings(cls, path: str | os.PathLike) -> RadixactPlanSettings:
         """Read plan settings from a plan.settings file.
 
         Parameters
         ----------
-        path : str
+        path : path: str | os.PathLike
             Path to the plan.settings file.
 
         Returns
@@ -308,7 +384,14 @@ class RadixactPlanSettings:
 
     # endregion
 
-    def to_csv(self, path):
+    def to_csv(self, path: str | os.PathLike):
+        """Wrie plan settings to comma-separated value file.
+
+        Parameters
+        ----------
+        path : str | os.PathLike
+            Path to the CSV file.
+        """
         self._df.to_csv(path)
 
 
