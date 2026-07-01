@@ -48,6 +48,55 @@ class RadixactSinogram:
         self._uid = uid
 
     @classmethod
+    def from_bin(cls, path: str | os.PathLike, uid: str = None) -> RadixactSinogram:
+        """Reads planned, telemetry, difference or detector sinogram from a .bin
+        file exported from the Delivery Analysis software.
+
+        Parameters
+        ----------
+        path : str | os.PathLike
+            Path to the .bin file.
+        uid : str, optional
+            Unique identifier associated with the data. Default is None.
+
+        Returns
+        -------
+        RadixactSinogram
+            The csv file is returned as a two-dimensional numpy array encapsulated
+            with helper functions.
+
+        Notes
+        -----
+        The format of the bin file is an int32 describing number of projections, an
+        int32 describing number of channels (e.g., 64 for leaf sinogram or 640 for
+        detector sinogram), an int32 with unknown use ("1"), then an array of
+        float32 values with dimensions (num_projections, 4) including gantry angles
+        and couch positions, then an array of float32 values with dimensions (
+        num_projections, num_channels) including leaf open times or detector counts.
+        """
+        num_projections, num_channels = np.fromfile(path, dtype=np.int32, count=2)
+        header = np.fromfile(
+            path, dtype=np.float32, offset=12, count=num_projections * 4
+        ).reshape((num_projections, 4))
+        gantry_angles = (header[:, 0] - (180 / 51)) % 360
+        couch_positions = header[:, 3]
+        data = np.fromfile(
+            path, dtype=np.float32, offset=12 + num_projections * 4 * 4
+        ).reshape((num_projections, num_channels))
+        if data.shape[1] == 640:
+            data = data[:, 0:576]
+            data = np.flip(data, axis=1)
+        df = pl.DataFrame(
+            {
+                "projection": np.arange(num_projections) + 1,
+                "gantry_angle": gantry_angles,
+                "couch_position": couch_positions,
+                "channel_values": data,
+            }
+        )
+        return cls(df, uid)
+
+    @classmethod
     def from_dcm(cls, path: str | os.PathLike, uid: str = None) -> RadixactSinogram:
         """Reads planned sinogram from a DICOM RTPLAN file.
 
@@ -87,6 +136,43 @@ class RadixactSinogram:
             return cls(df, dicom_uid)
         else:
             return cls(df, uid)
+
+    @classmethod
+    def from_delivery_analysis_csv(
+        cls, path: str | os.PathLike, uid: str = None
+    ) -> RadixactSinogram:
+        """Reads planned, telemetry, difference or detector sinogram from a .csv
+        file exported from the Delivery Analysis software.
+
+        Parameters
+        ----------
+        path : str | os.PathLike
+            Path to the .csv file.
+        uid : str, optional
+            Unique identifier associated with the data. Default is None.
+
+        Returns
+        -------
+        Sinogram
+            The csv file is returned as a two-dimensional numpy array encapsulated
+            with helper functions.
+        """
+        data = np.loadtxt(path, delimiter=",", skiprows=1)[:, 3:]
+        if data.shape[1] == 640:
+            data = data[:, 0:576]
+            data = np.flip(data, axis=1)
+        projections = np.loadtxt(path, delimiter=",", skiprows=1)[:, 0]
+        gantry_angles = (
+            np.loadtxt(path, delimiter=",", skiprows=1)[:, 1] - (180 / 51)
+        ) % 360
+        df = pl.DataFrame(
+            {
+                "projection": projections,
+                "gantry_angle": gantry_angles,
+                "channel_values": data,
+            }
+        )
+        return cls(df)
 
     @classmethod
     def from_det(cls, path: str | os.PathLike, uid: str = None) -> RadixactSinogram:
@@ -192,88 +278,23 @@ class RadixactSinogram:
         return cls(df, uid)
 
     @classmethod
-    def from_bin(cls, path: str | os.PathLike, uid: str = None) -> RadixactSinogram:
-        """Reads planned, telemetry, difference or detector sinogram from a .bin
-        file exported from the Delivery Analysis software.
+    def from_parquet(cls, path: str | os.PathLike, uid: str = None) -> RadixactSinogram:
+        """Reads sinogram from a parquet file.
 
         Parameters
         ----------
         path : str | os.PathLike
-            Path to the .bin file.
+            Path to the parquet file.
         uid : str, optional
             Unique identifier associated with the data. Default is None.
 
         Returns
         -------
         RadixactSinogram
-            The csv file is returned as a two-dimensional numpy array encapsulated
-            with helper functions.
-
-        Notes
-        -----
-        The format of the bin file is an int32 describing number of projections, an
-        int32 describing number of channels (e.g., 64 for leaf sinogram or 640 for
-        detector sinogram), an int32 with unknown use ("1"), then an array of
-        float32 values with dimensions (num_projections, 4) including gantry angles
-        and couch positions, then an array of float32 values with dimensions (
-        num_projections, num_channels) including leaf open times or detector counts.
+            Two-dimensional numpy array encapsulated with helper functions.
         """
-        num_projections, num_channels = np.fromfile(path, dtype=np.int32, count=2)
-        header = np.fromfile(
-            path, dtype=np.float32, offset=12, count=num_projections * 4
-        ).reshape((num_projections, 4))
-        gantry_angles = (header[:, 0] - (180 / 51)) % 360
-        couch_positions = header[:, 3]
-        data = np.fromfile(
-            path, dtype=np.float32, offset=12 + num_projections * 4 * 4
-        ).reshape((num_projections, num_channels))
-        if data.shape[1] == 640:
-            data = data[:, 0:576]
-            data = np.flip(data, axis=1)
-        df = pl.DataFrame(
-            {
-                "projection": np.arange(num_projections) + 1,
-                "gantry_angle": gantry_angles,
-                "couch_position": couch_positions,
-                "channel_values": data,
-            }
-        )
+        df = pl.read_parquet(path)
         return cls(df, uid)
-
-    @classmethod
-    def from_csv(cls, path: str | os.PathLike, uid: str = None) -> RadixactSinogram:
-        """Reads planned, telemetry, difference or detector sinogram from a .csv
-        file exported from the Delivery Analysis software.
-
-        Parameters
-        ----------
-        path : str | os.PathLike
-            Path to the .csv file.
-        uid : str, optional
-            Unique identifier associated with the data. Default is None.
-
-        Returns
-        -------
-        Sinogram
-            The csv file is returned as a two-dimensional numpy array encapsulated
-            with helper functions.
-        """
-        data = np.loadtxt(path, delimiter=",", skiprows=1)[:, 3:]
-        if data.shape[1] == 640:
-            data = data[:, 0:576]
-            data = np.flip(data, axis=1)
-        projections = np.loadtxt(path, delimiter=",", skiprows=1)[:, 0]
-        gantry_angles = (
-            np.loadtxt(path, delimiter=",", skiprows=1)[:, 1] - (180 / 51)
-        ) % 360
-        df = pl.DataFrame(
-            {
-                "projection": projections,
-                "gantry_angle": gantry_angles,
-                "channel_values": data,
-            }
-        )
-        return cls(df)
 
     # endregion
 
@@ -764,7 +785,7 @@ class RadixactSinogram:
             header=",".join(header_row),
         )
 
-    def to_dcm(self, path: str | os.PathLike, template_path: str | os.PathLike):
+    def to_dcm(self, path: str | os.PathLike, template_path: str | os.PathLike) -> None:
         """Writes sinogram leaf open times to DICOM RTPLAN file, using an existing
         DICOM RTPLAN file as a template.
 
@@ -797,6 +818,16 @@ class RadixactSinogram:
                 "Template DICOM RTPLAN has incorrect number of control points"
             )
         ds.save_as(path)
+
+    def to_parquet(self, path: str | os.PathLike) -> None:
+        """Writes sinogram dataframe to parquet file.
+
+        Parameters
+        ----------
+        path : str | os.PathLike
+            Path of the parquet file to be written.
+        """
+        self._df.write_parquet(path)
 
     def upsample(self, frequency: int = 20) -> RadixactSinogram:
         """Upsamples sinogram to fractional projections.
