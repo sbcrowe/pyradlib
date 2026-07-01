@@ -234,6 +234,21 @@ class RadixactDataset:
             return motions
 
     @cached_property
+    def motion_metrics(self) -> pl.DataFrame:
+        metrics = []
+        for index, motion in enumerate(self.motions):
+            metrics.append(
+                motion.metrics.with_columns(pl.lit(index + 1).alias("fraction_index"))
+            )
+        metrics.append(
+            self.motion.metrics.with_columns(pl.lit(None).alias("fraction_index"))
+        )
+        df_metrics = pl.concat(metrics, how="vertical")
+        return df_metrics.select(
+            [pl.col("fraction_index"), pl.all().exclude("fraction_index")]
+        )
+
+    @cached_property
     def plans(self) -> list[RadixactPlan]:
         """Reurns list containing treatment plans.
 
@@ -472,6 +487,18 @@ class RadixactDataset:
     # endregion
 
     # region Public methods
+
+    def save_compressed(self, path: str | os.PathLike) -> None:
+        """Save compressed versions of dataset files in a directory.
+
+        Parameters
+        ----------
+        path : str | os.PathLike
+            Path to which the compressed files should be saved.
+        """
+        # TODO add other files
+        for index, motion in enumerate(self.motions):
+            motion.to_npz(os.path.join(path, f"motion_{index + 1:03d}"))
 
     # endregion
 
