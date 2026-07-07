@@ -261,9 +261,12 @@ class RadixactSynchronyMotion:
                                 "measured_diff": float(datapoint[4].text),
                             }
                         )
-                    df = pl.DataFrame(data)
-                    df = cls._calculate_additional_offsets(df)
-                    dfs.append(df)
+                    if len(data) > 0:
+                        df = pl.DataFrame(data)
+                        df = cls._calculate_additional_offsets(df)
+                        dfs.append(df)
+        if len(dfs) == 0:
+            return None
         # Create dataframe
         df = pl.concat(dfs)
         df = cls._calculate_additional_times(df)

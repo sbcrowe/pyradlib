@@ -229,7 +229,9 @@ class RadixactDataset:
         else:
             for motion_file in motion_files:
                 logger.debug(f"Loading {motion_file}")
-                motions.append(RadixactSynchronyMotion.from_xml(motion_file))
+                motion = RadixactSynchronyMotion.from_xml(motion_file)
+                if motion is not None:
+                    motions.append(motion)
             logger.info(f"Loaded {len(motions)} motion data files")
             return motions
 
