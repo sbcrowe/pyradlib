@@ -141,7 +141,7 @@ class RadixactPlan:
         result["isocentre_iec_z"] = float(
             self._ds.BeamSequence[0].ControlPointSequence[1].IsocenterPosition[1]
         )
-        result["couch travel"] = float(
+        result["couch_travel"] = float(
             self._ds.BeamSequence[0].ControlPointSequence[1].IsocenterPosition[2]
         ) - float(
             self._ds.BeamSequence[0].ControlPointSequence[-1].IsocenterPosition[2]
@@ -344,14 +344,14 @@ class RadixactPlanInformation:
                     vois.append(voi)
                     metrics.append(
                         objective_dict[spec_quantity]
-                        + spec_value
+                        + str(spec_value)
                         + unit_dict[spec_quantity]
                     )
                     objectives.append("> " + crit_value1 + unit_dict[crit_quantity])
-                    voi.append(voi)
+                    vois.append(voi)
                     metrics.append(
                         objective_dict[spec_quantity]
-                        + spec_value
+                        + str(spec_value)
                         + unit_dict[spec_quantity]
                     )
                     objectives.append("< " + crit_value2 + unit_dict[crit_quantity])
@@ -359,7 +359,7 @@ class RadixactPlanInformation:
                     vois.append(voi)
                     metrics.append(
                         objective_dict[spec_quantity]
-                        + spec_value
+                        + str(spec_value)
                         + unit_dict[spec_quantity]
                     )
                     objectives.append(
