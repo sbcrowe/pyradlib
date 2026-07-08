@@ -303,6 +303,16 @@ class RadixactSynchronyMotion:
             raise TypeError("Unsupported operand type for +")
         return type(self)(pl.concat([self._df, other._df]))
 
+    def __len__(self) -> int:
+        """Calculates the number of points in the motion data as length.
+
+        Returns
+        -------
+        int
+            Length of motion data, or number of discrete points.
+        """
+        return len(self._df)
+
     def __radd__(self, other: RadixactSynchronyMotion) -> RadixactSynchronyMotion:
         """Concatenates two motion datasets together, for sum() functions.
 
