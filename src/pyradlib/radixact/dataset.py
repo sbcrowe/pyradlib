@@ -24,6 +24,7 @@ from pyradlib.radixact.motion import RadixactSynchronyMotion
 from pyradlib.radixact.plan import (
     RadixactPlan,
     RadixactPlanDetails,
+    RadixactPlanInformation,
     RadixactPlanSettings,
 )
 from pyradlib.radixact.sinogram import RadixactSinogram
@@ -300,6 +301,31 @@ class RadixactDataset:
                 plan_details.append(RadixactPlanDetails.from_xml(plan_detail_file))
             logger.info(f"Loaded {len(plan_details)} plan detail files")
             return plan_details
+
+    @cached_property
+    def plan_informations(self) -> list[RadixactPlanInformation]:
+        """Returns list containing treatment plan information.
+
+        Returns
+        -------
+        list[RadixactPlanInformation]
+            List of treatment plan informations in the dataset.
+        """
+        plan_informations = []
+        plan_information_files = self._get_filtered_series_list(
+            "Plan Information", series="curr_path"
+        )
+        if len(plan_information_files) == 0:
+            logger.debug("Dataset contains no plan information files")
+            return plan_informations
+        else:
+            for plan_information_file in plan_information_files:
+                logger.debug(f"Loading {plan_information_file}")
+                plan_informations.append(
+                    RadixactPlanInformation.from_xml(plan_information_file)
+                )
+            logger.info(f"Loaded {len(plan_informations)} plan information files")
+            return plan_informations
 
     @cached_property
     def plan_settings(self) -> list[RadixactPlanSettings]:
