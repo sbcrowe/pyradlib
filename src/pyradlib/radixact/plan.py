@@ -16,6 +16,7 @@ import os
 import xml.etree.ElementTree as et
 from functools import cached_property
 
+import numpy as np
 import polars as pl
 import pydicom
 
@@ -54,12 +55,22 @@ class RadixactPlan:
         RadixactPlan
             The DICOM treatment plan wrapped in a helper class.
         """
-        ds = pydicom.read_file(path)
+        ds = pydicom.dcmread(path)
         return cls(ds)
 
     # endregion
 
     # region Magic methods
+
+    def __repr__(self) -> str:
+        """Returns an unambigious string representation of the object.
+
+        Returns
+        -------
+        str
+            Representation of the object.
+        """
+        return f"RadixactPlan(SeriesInstanceUID={self._ds.SeriesInstanceUID})"
 
     # endregion
 
@@ -79,11 +90,11 @@ class RadixactPlan:
         # TODO Manage names that aren't in format SMITH^JOHN
         result["last_name"] = str(self._ds.PatientName).split("^")[0]
         result["first_name"] = " ".join(str(self._ds.PatientName).split("^")[1:])
-        result["physician"] = self._ds.OpteratorsName
+        result["physician"] = str(self._ds.OperatorsName)
         result["plan_name"] = self._ds.RTPlanName
-        result["plan_date"] = self._ds.RTPlaneDate
+        result["plan_date"] = self._ds.RTPlanDate
         result["plan_intent"] = self._ds.PlanIntent
-        result["linear_accelerator"] = self._ds.DeviceSerialNumber
+        result["linear_accelerator"] = self._ds.BeamSequence[0].DeviceSerialNumber
         result["prescribed_dose"] = (
             float(self._ds.DoseReferenceSequence[0].TargetPrescriptionDose) * 100
         )
@@ -180,17 +191,46 @@ class RadixactPlanDetails:
         details = {}
         tree = et.parse(path)
         root = tree.getroot()
-        fields = root.find("Model").find("Objects").find("Object").find("Fields")
-        details["machine_id"] = fields.find("TreatmentMachineId").text
-        details["revision"] = fields.find("TreatmentMachineRevision").text
-        details["type"] = fields.find("PlanDeliveryType").text
-        details["delivery"] = fields.find("DeliveryScheme").text
-        details["mode"] = fields.find("PlanMode").text
-        details["couch_position"] = float(fields.find("CouchInsertionPositionMm").text)
-        details["modulation_factor"] = float(
-            fields.find("PlanningModulationFactor").text
+        # Extract tomo plan details
+        # fields = root.find("Model").find("Objects").find("Object").find("Fields")
+        plan_details_objects = (
+            root.find("Model")
+            .find("Objects")
+            .findall(".//*[@typeId='com.accuray.tps.domain_plan.TomoPlanDetails']")
         )
-        details["pitch"] = float(fields.find("Pitch").text)
+        if len(plan_details_objects) > 0:
+            fields = plan_details_objects[0].find("Fields")
+            details["machine_id"] = fields.find("TreatmentMachineId").text
+            details["revision"] = fields.find("TreatmentMachineRevision").text
+            details["type"] = fields.find("PlanDeliveryType").text
+            details["delivery"] = fields.find("DeliveryScheme").text
+            details["mode"] = fields.find("PlanMode").text
+            details["couch_position"] = float(
+                fields.find("CouchInsertionPositionMm").text
+            )
+            details["modulation_factor"] = float(
+                fields.find("PlanningModulationFactor").text
+            )
+            details["pitch"] = float(fields.find("Pitch").text)
+        # Extract imaging angles
+        imaging_angle_objects = (
+            root.find("Model")
+            .find("Objects")
+            .findall(
+                ".//*[@typeId='com.accuray.tps.domain_plan.TomoMotionImagingAngle']"
+            )
+        )
+        if len(imaging_angle_objects) > 0:
+            imaging_angles = np.array(
+                [
+                    float(element.find("Fields").find("Angle").text)
+                    for element in imaging_angle_objects
+                ]
+            )
+            for index, angle in enumerate(imaging_angles):
+                details[f"imaging_angle_{str(index + 1)}"] = angle
+            for index in range(len(imaging_angles), 6, 1):
+                details[f"imaging_angle_{str(index + 1)}"] = None
         # TODO Read other parameters, such as dose objectives and Synchrony imaging
         # angles.
         return cls(pl.DataFrame(details))
@@ -381,6 +421,114 @@ class RadixactPlanSettings:
                     parameter, value = line.strip().split("=")
                     data[parameter.strip()] = value.strip()
         return cls(pl.DataFrame(data))
+
+    # endregion
+
+    # region Magic methods
+
+    def __repr__(self) -> str:
+        """Returns an unambigious string representation of the object.
+
+        Returns
+        -------
+        str
+            Representation of the object.
+        """
+        return f"RadixactPlanSettings(id={id(self)})"
+
+    # endregion
+
+    # region Properties
+
+    @cached_property
+    def summary(self) -> pl.DataFrame:
+        """Produce summary of treatment plan settings.
+
+        Returns
+        -------
+        pl.DataFrame
+            DataFrame containing treatment plan settings.
+        """
+        result_dfs = []
+        # Extract imaging protocols
+        result_dfs.append(
+            self._df.select(
+                [
+                    pl.col("SharedCT-kvctKey")
+                    .str.split(":")
+                    .list.get(1)
+                    .alias("kvct_protocol"),
+                    pl.col("SharedCT-kvctKey")
+                    .str.split(":")
+                    .list.get(2)
+                    .alias("kvct_body_size"),
+                    pl.col("SharedCT-kvctKey")
+                    .str.split(":")
+                    .list.get(3)
+                    .alias("kvct_field_of_view"),
+                    pl.col("SharedCT-kvctKey")
+                    .str.split(":")
+                    .list.get(4)
+                    .alias("kvct_mode"),
+                    (
+                        pl.col("scanSelectionMaxEdge").cast(pl.Float64)
+                        - pl.col("scanSelectionMinEdge").cast(pl.Float64)
+                    ).alias("scan_length"),
+                ]
+            )
+        )
+        # Extract Synchrony data, if available angles
+        if "measuredDifferenceTolerance" in self._df:
+            result_dfs.append(
+                self._df.select(
+                    [
+                        pl.col("measuredDifferenceTolerance")
+                        .cast(pl.Float64)
+                        .alias("measured_diff_tolerance"),
+                        pl.col("potentialDifferenceTolerance")
+                        .cast(pl.Float64)
+                        .alias("potential_diff_tolerance"),
+                        pl.col("targetOffsetTolerance")
+                        .cast(pl.Float64)
+                        .alias("target_offset_tolerance"),
+                        pl.col("rigidBodyError")
+                        .cast(pl.Float64)
+                        .alias("rigid_body_tolerance"),
+                        pl.col("trackingRange")
+                        .cast(pl.Float64)
+                        .alias("tracking_range"),
+                        (
+                            pl.col("TrackingViolationDelayMicroSeconds").cast(
+                                pl.Float64
+                            )
+                            / 1000000
+                        ).alias("auto_pause_delay"),
+                        pl.col("sensitivity"),
+                    ]
+                )
+            )
+            result_dfs.append(
+                self._df.select(
+                    pl.col(imaging_angle_name)
+                    .cast(pl.Float64)
+                    .alias(f"imaging_angle_{str(index + 1)}")
+                    if imaging_angle_name in self._df.columns
+                    else pl.lit(None)
+                    .cast(pl.Float64)
+                    .alias(f"imaging_angle_{str(index + 1)}")
+                    for index, imaging_angle_name in enumerate(
+                        [
+                            "RadiographAngle_0-Angle",
+                            "RadiographAngle_1-Angle",
+                            "RadiographAngle_2-Angle",
+                            "RadiographAngle_3-Angle",
+                            "RadiographAngle_4-Angle",
+                            "RadiographAngle_5-Angle",
+                        ]
+                    )
+                )
+            )
+        return pl.concat(result_dfs, how="horizontal")
 
     # endregion
 
