@@ -206,9 +206,14 @@ class RadixactDataset:
         if len(self.motions) == 0:
             return None
         else:
-            result = sum(self.motions)
+            result = pl.concat(
+                [
+                    motion._df.with_columns(session_index=pl.lit(key))
+                    for key, motion in enumerate(self.motions)
+                ]
+            )
             logger.info(f"Combined {len(self.motions)} motion data files")
-            return result
+            return RadixactSynchronyMotion(result)
 
     @cached_property
     def motions(self) -> list[RadixactSynchronyMotion]:
@@ -262,9 +267,7 @@ class RadixactDataset:
         # TODO Potentially extract ds.BeamSequence[0].DeviceSerialNumber and
         # ds.RTPlanLabel to be used as identifiers in a dictionary.
         plans = []
-        plan_files = self._get_filtered_series_list(
-            "Treatment Plan", series="curr_path"
-        )
+        plan_files = self._get_filtered_series_list("Plan", series="curr_path")
         if len(plan_files) == 0:
             logger.debug("Dataset contains no plan files")
             return plans
@@ -294,9 +297,7 @@ class RadixactDataset:
         else:
             for plan_detail_file in plan_detail_files:
                 logger.debug(f"Loading {plan_detail_file}")
-                plan_details.append(
-                    RadixactPlanDetails.from_plan_settings(plan_detail_file)
-                )
+                plan_details.append(RadixactPlanDetails.from_xml(plan_detail_file))
             logger.info(f"Loaded {len(plan_details)} plan detail files")
             return plan_details
 
@@ -499,8 +500,11 @@ class RadixactDataset:
             Path to which the compressed files should be saved.
         """
         # TODO add other files
+        # TODO Consider compression or saving of partial plan data instead of DCM.
+        for index, plan in enumerate(self.plans):
+            pydicom.dcmwrite(os.path.join(path, f"rtplan_{index + 1:03d}"), plan._ds)
         for index, motion in enumerate(self.motions):
-            motion.to_npz(os.path.join(path, f"motion_{index + 1:03d}"))
+            motion.to_npz(os.path.join(path, f"motiondata_{index + 1:03d}"))
 
     # endregion
 
@@ -609,7 +613,7 @@ class RadixactDataset:
         df=pl.DataFrame, series_name: str = "curr_path"
     ) -> pl.DataFrame:
         """Categorises files in manifest dataframe with a "type" string, e.g.,
-        "Treatment Plan", "Dose Distribution", "Structure Set", "Telemetry sinogram",
+        "Plan", "Dose Distribution", "Structure Set", "Telemetry sinogram",
         to allow for simple filtering.
 
         Parameters
