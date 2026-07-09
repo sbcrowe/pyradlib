@@ -36,15 +36,13 @@ logger = logging.getLogger(__name__)
 class RadixactDataset:
     # region Constructors
 
-    def __init__(self, files: pl.DataFrame, label: str = None) -> RadixactDataset:
+    def __init__(self, files: pl.DataFrame) -> RadixactDataset:
         """Initialises an object corresponding to a Radixact patient dataset.
 
         Parameters
         ----------
         files : pl.DataFrame
             DataFrame containing the files comprising the dataset.
-        label : str, optional
-            Label string, to allow identification of dataset, by . Default is None.
 
         Returns
         -------
@@ -52,18 +50,16 @@ class RadixactDataset:
             The encapsulated dataset object.
         """
         self._files = files
-        self._label = label
         logger.debug(f"Dataset contains {len(self._files)} files")
 
     @classmethod
-    def from_data_extractor(cls, path, label: str = None) -> RadixactDataset:
+    def from_data_extractor(cls, path: str | os.PathLike) -> RadixactDataset:
         """Reads dataset from a Patient Data Extractor folder.
 
         Parameters
         ----------
-        path : str
+        path : str | os.PathLike
             Path to the patient data folder.
-        label : str, optional
 
         Returns
         -------
@@ -79,12 +75,12 @@ class RadixactDataset:
         return dataset
 
     @classmethod
-    def from_delivery_analysis(cls, path) -> RadixactDataset:
+    def from_delivery_analysis(cls, path: str | os.PathLike) -> RadixactDataset:
         """Reads dataset from a Delivery Analysis folder.
 
         Parameters
         ----------
-        path : str
+        path : str | os.PathLike
             Path containing the Delivery Analysis cache files to be read.
 
         Returns
@@ -101,11 +97,35 @@ class RadixactDataset:
         return cls.from_path_list(sorted(os.listdir(path)))
 
     @classmethod
-    def from_path_list(cls, paths: list[str]) -> RadixactDataset:
+    def from_path(cls, path: str | os.PathLike) -> RadixactDataset:
+        """Reads dataset from a directory.
+
+        Parameters
+        ----------
+        path : str | os.PathLike
+            Path of directory containing the files to be read.
+
+        Returns
+        -------
+        RadixactDataset
+            The encapsulated dataset object.
+
+        Notes
+        -----
+        The method will check whether the directory is an anonymised patient data
+        extractor export, and if not, assume it is a delivery analysis directory.
+        """
+        if os.path.exists(os.path.join(path, "PatientExportDataBO.xml")):
+            return RadixactDataset.from_data_extractor(path)
+        else:
+            return RadixactDataset.from_delivery_analysis(path)
+
+    @classmethod
+    def from_path_list(cls, paths: list[str] | list[os.PathLike]) -> RadixactDataset:
         """
         Parameters
         ----------
-        paths : list[str]
+        paths : list[str] | list[os.PathLike]
             Paths of the files to be included in the DataSet.
 
         Returns
