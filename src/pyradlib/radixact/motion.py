@@ -575,6 +575,7 @@ class RadixactSynchronyMotion:
                 loc="upper right", handlelength=0, handletextpad=0, labelcolor="r"
             )
             axs[index].set_xlim((min_offset, max_offset))
+            axs[index].ticklabel_format(scilimits=[-3, 3])
         if mode == "absolute":
             axs[0].set_title("IEC-X (left-right)")
             axs[1].set_title("IEC-Y (sup-inf)")
