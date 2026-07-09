@@ -300,6 +300,23 @@ class RadixactDataset:
             return plans
 
     @cached_property
+    def plans_summary(self) -> pl.DataFrame:
+        """Produce summary of treatment plan parameters, for all plans in the dataset.
+
+        Returns
+        -------
+        pl.DataFrame
+            DataFrame containing treatment plan parameters, for all plans in the
+            dataset.
+        """
+        return pl.concat(
+            [
+                plan.summary.with_columns(plan_id=pl.lit(key))
+                for key, plan in enumerate(self.plans)
+            ]
+        )
+
+    @cached_property
     def plan_details(self) -> list[RadixactPlanDetails]:
         """Returns list containing treatment plan details.
 
@@ -371,6 +388,22 @@ class RadixactDataset:
                 )
             logger.info(f"Loaded {len(plan_settings)} plan setting files")
             return plan_settings
+
+    @cached_property
+    def plan_settings_summary(self) -> pl.DataFrame:
+        """Produce summary of treatment plan settings, for all plan settings in dataset.
+
+        Returns
+        -------
+        pl.DataFrame
+            Summary of treatment plan settings, for all plan settings in dataset.
+        """
+        return pl.concat(
+            [
+                plan_settings.summary.with_columns(plan_settings_id=pl.lit(key))
+                for key, plan_settings in enumerate(self.plan_settings)
+            ]
+        )
 
     @cached_property
     def plan_sinograms(self) -> list[RadixactSinogram]:

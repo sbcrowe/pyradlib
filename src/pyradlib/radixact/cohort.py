@@ -162,7 +162,7 @@ class RadixactDatasetCohort:
         return motions
 
     @cached_property
-    def plan_setting_summary(self) -> pl.DataFrame:
+    def plan_settings_summary(self) -> pl.DataFrame:
         """Returns concatenated plan settings for patient cohort.
 
         Returns
@@ -176,12 +176,9 @@ class RadixactDatasetCohort:
             plan_settings_summaries = []
             for patient_id, dir in enumerate(self._df["path"]):
                 ds = RadixactDataset.from_path(dir)
-                for plan_settings in ds.plan_settings:
-                    plan_settings_summaries.append(
-                        plan_settings.summary.with_columns(
-                            patient_id=pl.lit(patient_id)
-                        )
-                    )
+                plan_settings_summaries.append(
+                    ds.plan_settings_summary.with_columns(patient_id=pl.lit(patient_id))
+                )
             return pl.concat(plan_settings_summaries)
 
     # endregion
@@ -197,7 +194,7 @@ class RadixactDatasetCohort:
             Array containing valid imaging angles.
         """
         result = (
-            self.plan_setting_summary.select(
+            self.plan_settings_summary.select(
                 [
                     "imaging_angle_1",
                     "imaging_angle_2",
