@@ -533,10 +533,10 @@ class RadixactSynchronyMotion:
         else:
             min_offset = offset_lim[0]
             max_offset = offset_lim[1]
-        for index in range(3):
+        for index, axis in enumerate(["x", "y", "z"]):
             # TODO Don't assume that max_offset - min_offset is divisible by offset_bin
-            axs[index].hist(
-                offsets[:, index],
+            y, x, _ = axs[index].hist(
+                np.clip(offsets[:, index], min_offset, max_offset),
                 list(
                     np.arange(
                         min_offset,
@@ -546,15 +546,43 @@ class RadixactSynchronyMotion:
                 ),
                 density=False,
             )
-            axs[index].axvline(np.nanmedian(offsets[:, index]), color="r")
+            axs[index].axvline(
+                np.nanmean(offsets[:, index]),
+                color="r",
+                linestyle="-",
+                label=r"$\bar{"
+                + axis
+                + r"}$"
+                + f"={np.nanmean(offsets[:, index]):0.1f}\n"
+                + r"$2\sigma_{"
+                + axis
+                + r"}$"
+                + f"={2 * np.nanstd(offsets[:, index]):0.1f}",
+            )
+            axs[index].axvline(
+                np.nanmean(offsets[:, index]) - 2 * np.nanstd(offsets[:, index]),
+                color="r",
+                linestyle="--",
+                label="_",
+            )
+            axs[index].axvline(
+                np.nanmean(offsets[:, index]) + 2 * np.nanstd(offsets[:, index]),
+                color="r",
+                linestyle="--",
+                label="_",
+            )
+            axs[index].legend(
+                loc="upper right", handlelength=0, handletextpad=0, labelcolor="r"
+            )
+            axs[index].set_xlim((min_offset, max_offset))
         if mode == "absolute":
             axs[0].set_title("IEC-X (left-right)")
-            axs[1].set_title("IEC-Y (superior-inferior)")
-            axs[2].set_title("IEC-Z (anterior-posterior)")
-        if mode == "delta" or mode == "relative":
+            axs[1].set_title("IEC-Y (sup-inf)")
+            axs[2].set_title("IEC-Z (ant-post)")
+        elif mode == "delta" or mode == "relative":
             axs[0].set_title("ΔIEC-X (left-right)")
-            axs[1].set_title("ΔIEC-Y (superior-inferior)")
-            axs[2].set_title("ΔIEC-Z (anterior-posterior)")
+            axs[1].set_title("ΔIEC-Y (sup-inf)")
+            axs[2].set_title("ΔIEC-Z (ant-post)")
         if vector_lim is None:
             min_vector = 0
             max_vector = np.ceil(np.max(offsets[:, 3]))
@@ -562,7 +590,7 @@ class RadixactSynchronyMotion:
             min_vector = vector_lim[0]
             max_vector = vector_lim[1]
         axs[3].hist(
-            offsets[:, 3],
+            np.clip(offsets[:, 3], min_vector, max_vector),
             list(
                 np.arange(
                     min_vector,
@@ -573,14 +601,20 @@ class RadixactSynchronyMotion:
             density=False,
             cumulative=-1,
         )
-        axs[3].axvline(np.nanpercentile(offsets[:, 3], 95), color="g")
-        axs[3].text(
-            np.nanpercentile(offsets[:, 3], 95) + 0.5,
-            0.75 * len(offsets[:, 3]),
-            "$r_{95}$ = \n" + "{:0.1f}".format(np.percentile(offsets[:, 3], 95)) + "mm",
+        axs[3].axvline(
+            np.nanpercentile(offsets[:, 3], 95),
             color="g",
+            linestyle="-",
+            label="$r_{95}$" + f"={np.percentile(offsets[:, 3], 95):0.1f}",
         )
-        axs[3].set_title("Magnitude (3-dimensional)")
+        axs[3].legend(
+            loc="upper right", handlelength=0, handletextpad=0, labelcolor="g"
+        )
+        axs[3].set_xlim((min_vector, max_vector))
+        if mode == "absolute":
+            axs[3].set_title("r (vector)")
+        elif mode == "delta" or mode == "relative":
+            axs[3].set_title("Δr (vector)")
         fig.supylabel("Number of data points")
         if mode == "absolute":
             fig.supxlabel("Target offset relative to position at registration (mm)")
