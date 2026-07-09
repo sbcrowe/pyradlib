@@ -1,5 +1,6 @@
 import os
 
+from pyradlib.radixact.cohort import RadixactDatasetCohort
 from pyradlib.radixact.dataset import RadixactDataset
 from pyradlib.radixact.motion import RadixactSynchronyMotion
 from pyradlib.radixact.plan import (
@@ -13,6 +14,7 @@ from pyradlib.radixact.timing import RadixactTiming
 
 __all__ = [
     "RadixactDataset",
+    "RadixactDatasetCohort",
     "RadixactPlan",
     "RadixactPlanDetails",
     "RadixactPlanInformation",
