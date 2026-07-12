@@ -132,14 +132,21 @@ class RadixactDatasetCohort:
         if len(self._df) == 0:
             return None
         else:
-            result = pl.concat(
-                [
-                    motion._df.with_columns(patient_id=pl.lit(key))
-                    for key, motion in enumerate(self.motions)
-                ]
-            )
-            logger.info(f"Combined {len(self.motions)} motion data files")
-            return RadixactSynchronyMotion(result)
+            return RadixactSynchronyMotion.from_patient_motions(self.motions)
+
+    @cached_property
+    def motion_metrics(self) -> pl.DataFrame:
+        """Returns concatenated motion metrics for patient cohort.
+
+        Returns
+        -------
+        pl.DataFrame
+            Concatenated motion metrics for patient cohort.
+        """
+        if len(self._df) == 0:
+            return None
+        else:
+            return self.motion.metrics
 
     @cached_property
     def motions(self) -> list[RadixactSynchronyMotion]:
@@ -162,6 +169,28 @@ class RadixactDatasetCohort:
         return motions
 
     @cached_property
+    def plan_summary(self) -> pl.DataFrame:
+        """Returns summary of plans for patient cohort.
+
+        Returns
+        -------
+        pl.DataFrame
+            Summary of plans for patient cohort.
+        """
+        if len(self._df) == 0:
+            return None
+        else:
+            plan_summaries = []
+            for patient_index, dir in enumerate(self._df["path"]):
+                ds = RadixactDataset.from_path(dir)
+                plan_summaries.append(
+                    ds.plan_summary.with_columns(patient_index=pl.lit(patient_index))
+                )
+            return pl.concat(plan_summaries).select(
+                [pl.col("patient_index"), pl.all().exclude("patient_index")]
+            )
+
+    @cached_property
     def plan_settings_summary(self) -> pl.DataFrame:
         """Returns concatenated plan settings for patient cohort.
 
@@ -174,12 +203,16 @@ class RadixactDatasetCohort:
             return None
         else:
             plan_settings_summaries = []
-            for patient_id, dir in enumerate(self._df["path"]):
+            for patient_index, dir in enumerate(self._df["path"]):
                 ds = RadixactDataset.from_path(dir)
                 plan_settings_summaries.append(
-                    ds.plan_settings_summary.with_columns(patient_id=pl.lit(patient_id))
+                    ds.plan_settings_summary.with_columns(
+                        patient_index=pl.lit(patient_index)
+                    )
                 )
-            return pl.concat(plan_settings_summaries)
+            return pl.concat(plan_settings_summaries).select(
+                [pl.col("patient_index"), pl.all().exclude("patient_index")]
+            )
 
     # endregion
 
@@ -279,5 +312,112 @@ class RadixactDatasetCohort:
         return self.motion.plot_motion_histogram(
             mode, fig_size, offset_lim, offset_bin, vector_lim, vector_bin, title
         )
+
+    def plot_patient_motions_fraction_less_than_threshold(
+        self,
+        offset_type: str = "target_offset_vector",
+        threshold_step: float = 1,
+        figsize=(12, 4),
+    ) -> mpl.Figure:
+        """Plots patient offset percentile fractions less than threshold data.
+
+        Parameters
+        ----------
+        offset_type : str, optional
+            The motion metric percentiles to evaluate against thresholds. Default is
+            "target_offset_vector".
+        threshold_step : float, optional
+            Step width to use to define thresholds against which to evaluate offset
+            percentiles, in mm. Default is 1.
+        figsize : tuple, optional
+            Figure size. Default is (12, 4), i.e., 12 by 4 inches.
+
+        Returns
+        -------
+        mpl.Figure
+            Figure showing fraction of patient offset percentiles less than a
+            threshold.
+
+        Notes
+        -----
+        This figure is inspired by Figure 5(b) of Li et al. (2008), available at
+        DOI:10.1016/j.ijrobp.2007.10.049.
+        """
+        return self.motion.plot_patient_fraction_less_than_threshold(
+            offset_type, threshold_step, figsize
+        )
+
+    def plot_session_motions_fraction_less_than_threshold(
+        self,
+        offset_type: str = "target_offset_vector",
+        threshold_step: float = 1,
+        figsize=(12, 4),
+    ) -> mpl.Figure:
+        """Plots the fraction of session motion statistics less than thresholds,
+        intended to provide insight on margin selection.
+
+        Parameters
+        ----------
+        offset_type : str, optional
+            The motion metric percentiles to evaluate against thresholds. Default is
+            "target_offset_vector".
+        threshold_step : float, optional
+            Step width to use to define thresholds against which to evaluate offset
+            percentiles, in mm. Default is 1.
+        figsize : tuple, optional
+            Figure size. Default is (12, 4), i.e., 12 by 4 inches.
+
+        Returns
+        -------
+        mpl.Figure
+            Figure showing fraction of session motion statistics less than thresholds.
+
+        Notes
+        -----
+        This calculation is inspired by Figure 5(b) of Li et al. (2008), available at
+        DOI:10.1016/j.ijrobp.2007.10.049.
+        """
+        return self.motion.plot_session_fraction_less_than_threshold(
+            offset_type, threshold_step, figsize
+        )
+
+    def plot_percentile_vector_target_offset(
+        self, fig_size: tuple[float, float] = (12, 4)
+    ) -> mpl.Figure:
+        """Calculates R95, R90, and R80 percentile vector target offsets for individual
+        patients within the cohort, and presents as a line plot.
+
+        Returns
+        -------
+        mpl.Figure
+            Line plot for percentile vector target offset.
+
+        Notes
+        -----
+        This plot resembles that of Figure 5(b) from Li et al.'s 2007 paper, Dosimetric
+        consequences of intrafraction prostate motion.
+        """
+        patient_metrics = self.motion_metrics.filter(
+            pl.col("session_index").is_null(), pl.col("patient_index").is_not_null()
+        )
+        fig, ax = plt.subplots(1, 1, figsize=fig_size)
+        r80 = patient_metrics.select(
+            pl.col("80th_percentile_target_offset_vector")
+        ).to_numpy()
+        r90 = patient_metrics.select(
+            pl.col("90th_percentile_target_offset_vector")
+        ).to_numpy()
+        r95 = patient_metrics.select(
+            pl.col("95th_percentile_target_offset_vector")
+        ).to_numpy()
+        pt = patient_metrics.select(pl.col("patient_index")).to_numpy() + 1
+        ax.plot(pt, r80, label="$r_{80}$")
+        ax.plot(pt, r90, label="$r_{90}$")
+        ax.plot(pt, r95, label="$r_{95}$")
+        ax.set_xlim(pt[0], pt[-1])
+        ax.set_xlabel("Patient number")
+        ax.set_ylabel("Vector target offset (mm)")
+        ax.legend()
+        return fig
 
     # endregion

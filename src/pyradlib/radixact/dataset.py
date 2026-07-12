@@ -4,6 +4,8 @@
 This module provides functionality for processing of data from Radixact treatments.
 """
 
+from __future__ import annotations
+
 # authorship information
 __author__ = "Scott Crowe"
 __email__ = "sb.crowe@gmail.com"
@@ -17,8 +19,10 @@ import os
 import xml.etree.ElementTree as et
 from functools import cached_property
 
+import matplotlib as mpl
 import polars as pl
 import pydicom
+import seaborn as sns
 
 from pyradlib.radixact.motion import RadixactSynchronyMotion
 from pyradlib.radixact.plan import (
@@ -227,14 +231,11 @@ class RadixactDataset:
         if len(self.motions) == 0:
             return None
         else:
-            result = pl.concat(
-                [
-                    motion._df.with_columns(session_index=pl.lit(key))
-                    for key, motion in enumerate(self.motions)
-                ]
-            )
-            logger.info(f"Combined {len(self.motions)} motion data files")
-            return RadixactSynchronyMotion(result)
+            return RadixactSynchronyMotion.from_session_motions(self.motions)
+
+    @cached_property
+    def motion_metrics(self) -> pl.DataFrame:
+        return self.motion.metrics
 
     @cached_property
     def motions(self) -> list[RadixactSynchronyMotion]:
@@ -262,21 +263,6 @@ class RadixactDataset:
             return motions
 
     @cached_property
-    def motion_metrics(self) -> pl.DataFrame:
-        metrics = []
-        for index, motion in enumerate(self.motions):
-            metrics.append(
-                motion.metrics.with_columns(pl.lit(index + 1).alias("fraction_index"))
-            )
-        metrics.append(
-            self.motion.metrics.with_columns(pl.lit(None).alias("fraction_index"))
-        )
-        df_metrics = pl.concat(metrics, how="vertical")
-        return df_metrics.select(
-            [pl.col("fraction_index"), pl.all().exclude("fraction_index")]
-        )
-
-    @cached_property
     def plans(self) -> list[RadixactPlan]:
         """Reurns list containing treatment plans.
 
@@ -300,7 +286,7 @@ class RadixactDataset:
             return plans
 
     @cached_property
-    def plans_summary(self) -> pl.DataFrame:
+    def plan_summary(self) -> pl.DataFrame:
         """Produce summary of treatment plan parameters, for all plans in the dataset.
 
         Returns
@@ -311,10 +297,10 @@ class RadixactDataset:
         """
         return pl.concat(
             [
-                plan.summary.with_columns(plan_id=pl.lit(key))
+                plan.summary.with_columns(plan_index=pl.lit(key))
                 for key, plan in enumerate(self.plans)
             ]
-        )
+        ).select([pl.col("plan_index"), pl.all().exclude("plan_index")])
 
     @cached_property
     def plan_details(self) -> list[RadixactPlanDetails]:
@@ -569,6 +555,122 @@ class RadixactDataset:
     # endregion
 
     # region Public methods
+
+    def plot_session_motions(
+        self,
+        parameters: list[str] = [
+            "target_offset_x",
+            "target_offset_y",
+            "target_offset_z",
+            "target_offset_vector",
+            "potential_diff",
+            "measured_diff",
+            "rigid_body",
+        ],
+        col_wrap: int = 4,
+    ) -> mpl.Figure:
+        """Prepares relational line plot for parameter distances, with each session as
+        a unique facet.
+
+        Parameters
+        ----------
+        parameters : list[str], optional
+            The Synchrony paramters to include in the figure. Possible options include:
+            "target_offset_x", "target_offset_y", "target_offset_z"
+                Target offset in IEC-X, IEC-Y and/or IEC-Z dimensions.
+            "target_offset_vector"
+                Target offset in 3D space.
+            "potential_diff"
+                Potential difference or uncertainty in target position calculcation.
+            "measured_diff"
+                Measured delta or difference between observed and calculated offset.
+            "rigid_body"
+                Rigid body value describing deformation of fiducial distribution.
+            Default is [ "target_offset_x", "target_offset_y", "target_offset_z",
+            "potential_diff", "measured_diff", "rigid_body" ]
+        col_wrap : int, optional
+            Number of columns in figure. Default is 4.
+
+        Returns
+        -------
+        mpl.Figure
+            Relational line plot for parameter distances.
+        """
+        mapping = {
+            "target_offset_x": "IEC-X target offset",
+            "target_offset_y": "IEC-Y target offset",
+            "target_offset_z": "IEC-Z target offset",
+            "target_offset_vector": "Vector target offset",
+            "potential_diff": "Potential difference",
+            "measured_diff": "Measured delta",
+            "rigid_body": "Rigid body",
+        }
+        select = [
+            pl.col(col)
+            for col in [
+                "session_index",
+                "delta_time",
+            ]
+            + parameters
+            if col in self.motion._df
+        ]
+        unpivot_df = (
+            self.motion._df.select(select)
+            .unpivot(index=["session_index", "delta_time"])
+            .select(
+                [
+                    (pl.col("session_index") + 1).alias("Session"),
+                    pl.col("variable").replace(mapping).alias("Parameter"),
+                    pl.col("value").alias("Distance (mm)"),
+                    pl.col("delta_time").alias("Time (s)"),
+                ]
+            )
+        )
+        ax = sns.relplot(
+            unpivot_df,
+            y="Distance (mm)",
+            x="Time (s)",
+            col="Session",
+            hue="Parameter",
+            col_wrap=col_wrap,
+            kind="line",
+        )
+        sns.move_legend(ax, "upper center", ncol=10, bbox_to_anchor=(0.5, 1.02))
+        return ax.figure
+
+    def plot_session_motions_fraction_less_than_threshold(
+        self,
+        offset_type: str = "target_offset_vector",
+        threshold_step: float = 1,
+        figsize=(12, 4),
+    ) -> mpl.Figure:
+        """Plots the fraction of session motion statistics less than thresholds,
+        intended to provide insight on margin selection.
+
+        Parameters
+        ----------
+        offset_type : str, optional
+            The motion metric percentiles to evaluate against thresholds. Default is
+            "target_offset_vector".
+        threshold_step : float, optional
+            Step width to use to define thresholds against which to evaluate offset
+            percentiles, in mm. Default is 1.
+        figsize : tuple, optional
+            Figure size. Default is (12, 4), i.e., 12 by 4 inches.
+
+        Returns
+        -------
+        mpl.Figure
+            Figure showing fraction of session motion statistics less than thresholds.
+
+        Notes
+        -----
+        This calculation is inspired by Figure 5(b) of Li et al. (2008), available at
+        DOI:10.1016/j.ijrobp.2007.10.049.
+        """
+        return self.motion.plot_session_fraction_less_than_threshold(
+            offset_type, threshold_step, figsize
+        )
 
     def save_compressed(self, path: str | os.PathLike) -> None:
         """Save compressed versions of dataset files in a directory.

@@ -5,6 +5,8 @@ This module provides functionality for processing of motion data from Synchrony
 treatments.
 """
 
+from __future__ import annotations
+
 # authorship information
 __author__ = "Scott Crowe"
 __email__ = "sb.crowe@gmail.com"
@@ -17,8 +19,9 @@ import os
 import xml.etree.ElementTree as et
 from functools import cached_property
 
-import matplotlib as mlp
+import matplotlib as mpl
 import matplotlib.pyplot as plt
+import matplotlib.ticker as mtick
 import numpy as np
 import numpy.typing as npt
 import polars as pl
@@ -204,6 +207,58 @@ class RadixactSynchronyMotion:
         return cls(df, uid)
 
     @classmethod
+    def from_patient_motions(
+        cls, motions: list[RadixactSynchronyMotion]
+    ) -> RadixactSynchronyMotion:
+        """Combines motion data from multiple patients, typically all motions for
+        a patient dataset cohort.
+
+        Parameters
+        ----------
+        motions : list[RadixactSynchronyMotion]
+            The patient motions to be combined.
+
+        Returns
+        -------
+        RadixactSynchronyMotion
+            The Radixact Synchrony motion data encapsulated with helper functions.
+        """
+        result = pl.concat(
+            [
+                motion._df.with_columns(patient_index=pl.lit(key))
+                for key, motion in enumerate(motions)
+            ]
+        ).select([pl.col("patient_index"), pl.all().exclude("patient_index")])
+        logger.info(f"Combined {len(motions)} motion data files")
+        return RadixactSynchronyMotion(result)
+
+    @classmethod
+    def from_session_motions(
+        cls, motions: list[RadixactSynchronyMotion]
+    ) -> RadixactSynchronyMotion:
+        """Combines motion data from multiple sessions, typically all motions for
+        a patient dataset.
+
+        Parameters
+        ----------
+        motions : list[RadixactSynchronyMotion]
+            The session motions to be combined.
+
+        Returns
+        -------
+        RadixactSynchronyMotion
+            The Radixact Synchrony motion data encapsulated with helper functions.
+        """
+        result = pl.concat(
+            [
+                motion._df.with_columns(session_index=pl.lit(key))
+                for key, motion in enumerate(motions)
+            ]
+        ).select([pl.col("session_index"), pl.all().exclude("session_index")])
+        logger.info(f"Combined {len(motions)} motion data files")
+        return RadixactSynchronyMotion(result)
+
+    @classmethod
     def from_xml(
         cls, path: str | os.PathLike, uid: str = None
     ) -> RadixactSynchronyMotion:
@@ -354,120 +409,88 @@ class RadixactSynchronyMotion:
         pl.DataFrame
             The calculated motion and adaptation metrics.
         """
-        df_results = []
-        # Calculate duration (or skip, if motion contains multiple deliveries)
-        if (
-            len(self._df.select("delta_time").to_numpy())
-            == np.count_nonzero(self._df.select("delta_time").to_numpy()) + 1
-        ):
-            df_results.append(
-                self._df.select(
-                    [
-                        (
-                            pl.col("delta_time").last() - pl.col("delta_time").first()
-                        ).alias("duration"),
-                        pl.col("delta_time").count().alias("num_data_points"),
-                    ]
+        if "patient_index" in self._df:
+            result_df = []
+            for patient_index, patient_df in self._df.group_by("patient_index"):
+                for session_index, session_df in patient_df.group_by("session_index"):
+                    result_df.append(
+                        self._calculate_metrics(session_df).with_columns(
+                            pl.lit(patient_index[0]).alias("patient_index"),
+                            pl.lit(session_index[0]).alias("session_index"),
+                        )
+                    )
+                result_df.append(
+                    self._calculate_metrics(session_df).with_columns(
+                        pl.lit(patient_index[0]).alias("patient_index"),
+                        pl.lit(None).alias("session_index"),
+                    )
+                )
+            result_df.append(
+                self._calculate_metrics(session_df).with_columns(
+                    pl.lit(None).alias("patient_index"),
+                    pl.lit(None).alias("session_index"),
                 )
             )
-        else:
-            df_results.append(
-                self._df.select(
-                    [
-                        pl.lit(None).alias("duration"),
-                        pl.col("delta_time").count().alias("num_data_points"),
-                    ]
-                )
-            )
-        # Calculate IEC-X, IEC-Y, IEC-Z metrics
-        for col in ["target_offset_x", "target_offset_y", "target_offset_z"]:
-            df_results.append(
-                self._df.select(
-                    [
-                        pl.col(col).mean().alias("mean_" + col),
-                        pl.col(col).std().alias("standard_deviation_" + col),
-                        pl.col(col).median().alias("median_" + col),
-                        (pl.col(col).quantile(0.75) - pl.col(col).quantile(0.25)).alias(
-                            "interquartile_range_" + col
-                        ),
-                        (pl.col(col).quantile(0.9) - pl.col(col).quantile(0.1)).alias(
-                            "interdecile_range_" + col
-                        ),
-                        (pl.col(col).quantile(0.95) - pl.col(col).quantile(0.05)).alias(
-                            "5pc_trimmed_range_" + col
-                        ),
-                        (pl.col(col).max() - pl.col(col).min()).alias("range_" + col),
-                        pl.col("delta_" + col).mean().alias("mean_delta_" + col),
-                        pl.col("delta_" + col).median().alias("median_delta_" + col),
-                    ]
-                )
-            )
-        # Calculate vector displacement and tracking metrics
-        for col in [
-            series
-            for series in [
-                "target_offset_vector",
-                "delta_target_offset_vector",
-                "potential_diff",
-                "rigid_body",
-                "measured_diff",
-            ]
-            if series in self._df.columns
-        ]:
-            df_results.append(
-                self._df.select(
-                    [
-                        pl.col(col).mean().alias("mean_" + col),
-                        pl.col(col).std().alias("standard_deviation_" + col),
-                        pl.col(col).median().alias("median_" + col),
-                        pl.col(col).quantile(0.8).alias("80th_percentile_" + col),
-                        pl.col(col).quantile(0.9).alias("90th_percentile_" + col),
-                        pl.col(col).quantile(0.95).alias("95th_percentile_" + col),
-                        pl.col(col).max().alias("maximum_" + col),
-                    ]
-                )
-            )
-        # Calculate adaptation metrics
-        df_results.append(
-            self._df.select(
+            return pl.concat(result_df).select(
                 [
-                    (
-                        (pl.col("target_offset_y").abs() > 12.5).sum()
-                        / pl.col("delta_time").count()
-                    ).alias("fraction_target_offset_y_exceeding_12.5"),
-                    (
-                        (pl.col("target_offset_y").abs() > 20).sum()
-                        / pl.col("delta_time").count()
-                    ).alias("fraction_target_offset_y_exceeding_20"),
-                    (
-                        (
-                            (
-                                (3.125 / pl.col("target_offset_xz"))
-                                .arccos()
-                                .fill_nan(0)
-                                * 2
-                                / np.pi
-                            ).mean()
-                        ).alias("fraction_target_offset_xz_exceeding_3.125")
-                    ),
-                    (
-                        (
-                            (
-                                (4 / pl.col("target_offset_xz")).arccos().fill_nan(0)
-                                * 2
-                                / np.pi
-                            ).mean()
-                        ).alias("fraction_target_offset_xz_exceeding_4")
-                    ),
+                    pl.col("patient_index"),
+                    pl.col("session_index"),
+                    pl.all().exclude(["patient_index", "session_index"]),
                 ]
             )
-        )
-        # Return combined calculated metrics
-        return pl.concat(df_results, how="horizontal")
+        elif "session_index" in self._df:
+            result_df = []
+            for session_index, session_df in self._df.group_by("session_index"):
+                result_df.append(
+                    self._calculate_metrics(session_df).with_columns(
+                        pl.lit(session_index[0]).alias("session_index")
+                    )
+                )
+            result_df.append(
+                self._calculate_metrics(session_df).with_columns(
+                    pl.lit(None).alias("session_index"),
+                )
+            )
+            return pl.concat(result_df).select(
+                [pl.col("session_index"), pl.all().exclude("session_index")]
+            )
+        else:
+            return self._calculate_metrics(self._df)
 
     # endregion
 
     # region Public methods
+
+    def patient_fraction_less_than_threshold(
+        self, offset_type: str = "target_offset_vector", threshold_step: float = 1
+    ) -> pl.DataFrame:
+        """Calculates the fraction of patient motion statistics less than thresholds,
+        intended to provide insight on margin selection.
+
+        Parameters
+        ----------
+        offset_type : str, optional
+            The motion metric percentiles to evaluate against thresholds. Default is
+            "target_offset_vector".
+        threshold_step : float, optional
+            Step width to use to define thresholds against which to evaluate offset
+            percentiles, in mm. Default is 1.
+
+        Returns
+        -------
+        pl.DataFrame
+            DataFrame containing defining fraction of patient offset percentiles less
+            than calculated thresholds.
+
+        Notes
+        -----
+        This calculation is inspired by Figure 5(b) of Li et al. (2008), available at
+        DOI:10.1016/j.ijrobp.2007.10.049.
+        """
+        metrics = self.metrics.filter(
+            pl.col("session_index").is_null(), pl.col("patient_index").is_not_null()
+        )
+        return self._fraction_less_than_threshold(metrics, offset_type, threshold_step)
 
     def plot_motion_histogram(
         self,
@@ -478,7 +501,7 @@ class RadixactSynchronyMotion:
         vector_lim: tuple[float, float] = (0, 10),
         vector_bin: float = 0.25,
         title: str = None,
-    ) -> mlp.Figure:
+    ) -> mpl.Figure:
         """Generate a histogram plot of distribution of offset values in each dimension.
 
         Parameters
@@ -503,7 +526,7 @@ class RadixactSynchronyMotion:
 
         Returns
         -------
-        mlp.Figure
+        mpl.Figure
             Histogram of target offset values in each dimension.
         """
         if mode == "absolute":
@@ -612,6 +635,7 @@ class RadixactSynchronyMotion:
             loc="upper right", handlelength=0, handletextpad=0, labelcolor="g"
         )
         axs[3].set_xlim((min_vector, max_vector))
+        axs[3].ticklabel_format(scilimits=[-3, 3])
         if mode == "absolute":
             axs[3].set_title("r (vector)")
         elif mode == "delta" or mode == "relative":
@@ -626,6 +650,103 @@ class RadixactSynchronyMotion:
         if title is not None:
             fig.suptitle(title)
         return fig
+
+    def plot_patient_fraction_less_than_threshold(
+        self,
+        offset_type: str = "target_offset_vector",
+        threshold_step: float = 1,
+        figsize=(12, 4),
+    ) -> mpl.Figure:
+        """Plots patient offset percentile fractions less than threshold data.
+
+        Parameters
+        ----------
+        offset_type : str, optional
+            The motion metric percentiles to evaluate against thresholds. Default is
+            "target_offset_vector".
+        threshold_step : float, optional
+            Step width to use to define thresholds against which to evaluate offset
+            percentiles, in mm. Default is 1.
+        figsize : tuple, optional
+            Figure size. Default is (12, 4), i.e., 12 by 4 inches.
+
+        Returns
+        -------
+        mpl.Figure
+            Figure showing fraction of patient offset percentiles less than a
+            threshold.
+
+        Notes
+        -----
+        This figure is inspired by Figure 5(b) of Li et al. (2008), available at
+        DOI:10.1016/j.ijrobp.2007.10.049.
+        """
+        df = self.session_fraction_less_than_threshold(offset_type, threshold_step)
+        return self._plot_fraction_less_than_threshold(
+            df, "patients", offset_type, figsize
+        )
+
+    def plot_session_fraction_less_than_threshold(
+        self,
+        offset_type: str = "target_offset_vector",
+        threshold_step: float = 1,
+        figsize=(12, 4),
+    ) -> mpl.Figure:
+        """Plots session offset percentile fractions less than threshold data.
+
+        Parameters
+        ----------
+        offset_type : str, optional
+            _description_, by default "target_offset_vector"
+        threshold_step : float, optional
+            _description_, Default is 1 mm.
+        figsize : tuple, optional
+            Figure size. Default is (12, 4), i.e., 12 by 4 inches.
+
+        Returns
+        -------
+        mpl.Figure
+            Figure showing fraction of session offset percentiles less than a
+            threshold.
+
+        Notes
+        -----
+        This figure is inspired by Figure 5(b) of Li et al. (2008), available at
+        DOI:10.1016/j.ijrobp.2007.10.049.
+        """
+        df = self.session_fraction_less_than_threshold(offset_type, threshold_step)
+        return self._plot_fraction_less_than_threshold(
+            df, "sessions", offset_type, figsize
+        )
+
+    def session_fraction_less_than_threshold(
+        self, offset_type: str = "target_offset_vector", threshold_step: float = 1
+    ) -> pl.DataFrame:
+        """Calculates the fraction of session motion statistics less than thresholds,
+        intended to provide insight on margin selection.
+
+        Parameters
+        ----------
+        offset_type : str, optional
+            The motion metric percentiles to evaluate against thresholds. Default is
+            "target_offset_vector".
+        threshold_step : float, optional
+            Step width to use to define thresholds against which to evaluate offset
+            percentiles, in mm. Default is 1.
+
+        Returns
+        -------
+        pl.DataFrame
+            DataFrame containing defining fraction of session offset percentiles less
+            than calculated thresholds.
+
+        Notes
+        -----
+        This calculation is inspired by Figure 5(b) of Li et al. (2008), available at
+        DOI:10.1016/j.ijrobp.2007.10.049.
+        """
+        metrics = self.metrics.filter(pl.col("session_index").is_not_null())
+        return self._fraction_less_than_threshold(metrics, offset_type, threshold_step)
 
     def to_csv(self, path: str | os.PathLike) -> None:
         """Writes motion data to CSV file.
@@ -759,5 +880,246 @@ class RadixactSynchronyMotion:
             pl.from_epoch("timestamp", time_unit="ms").alias("datetime")
         )
         return result_df
+
+    @staticmethod
+    def _calculate_metrics(df: pl.DataFrame) -> pl.DataFrame:
+        df_results = []
+        # Calculate duration (or skip, if motion contains multiple deliveries)
+        if (
+            len(df.select("delta_time").to_numpy())
+            == np.count_nonzero(df.select("delta_time").to_numpy()) + 1
+        ):
+            df_results.append(
+                df.select(
+                    [
+                        (
+                            pl.col("delta_time").last() - pl.col("delta_time").first()
+                        ).alias("duration"),
+                        pl.col("delta_time").count().alias("num_data_points"),
+                    ]
+                )
+            )
+        else:
+            df_results.append(
+                df.select(
+                    [
+                        pl.lit(None).alias("duration"),
+                        pl.col("delta_time").count().alias("num_data_points"),
+                    ]
+                )
+            )
+        # Calculate IEC-X, IEC-Y, IEC-Z metrics
+        for col in ["target_offset_x", "target_offset_y", "target_offset_z"]:
+            df_results.append(
+                df.select(
+                    [
+                        pl.col(col).mean().alias("mean_" + col),
+                        pl.col(col).std().alias("standard_deviation_" + col),
+                        pl.col(col).median().alias("median_" + col),
+                        (pl.col(col).quantile(0.75) - pl.col(col).quantile(0.25)).alias(
+                            "interquartile_range_" + col
+                        ),
+                        (pl.col(col).quantile(0.9) - pl.col(col).quantile(0.1)).alias(
+                            "interdecile_range_" + col
+                        ),
+                        (pl.col(col).quantile(0.95) - pl.col(col).quantile(0.05)).alias(
+                            "5pc_trimmed_range_" + col
+                        ),
+                        (pl.col(col).max() - pl.col(col).min()).alias("range_" + col),
+                        pl.col("delta_" + col).mean().alias("mean_delta_" + col),
+                        pl.col("delta_" + col).median().alias("median_delta_" + col),
+                    ]
+                )
+            )
+        # Calculate vector displacement and tracking metrics
+        for col in [
+            series
+            for series in [
+                "target_offset_vector",
+                "delta_target_offset_vector",
+                "potential_diff",
+                "rigid_body",
+                "measured_diff",
+            ]
+            if series in df.columns
+        ]:
+            df_results.append(
+                df.select(
+                    [
+                        pl.col(col).mean().alias("mean_" + col),
+                        pl.col(col).std().alias("standard_deviation_" + col),
+                        pl.col(col).median().alias("median_" + col),
+                        pl.col(col).quantile(0.8).alias("80th_percentile_" + col),
+                        pl.col(col).quantile(0.9).alias("90th_percentile_" + col),
+                        pl.col(col).quantile(0.95).alias("95th_percentile_" + col),
+                        pl.col(col).max().alias("maximum_" + col),
+                    ]
+                )
+            )
+        # Calculate adaptation metrics
+        df_results.append(
+            df.select(
+                [
+                    (
+                        (pl.col("target_offset_y").abs() > 12.5).sum()
+                        / pl.col("delta_time").count()
+                    ).alias("fraction_target_offset_y_exceeding_12.5"),
+                    (
+                        (pl.col("target_offset_y").abs() > 20).sum()
+                        / pl.col("delta_time").count()
+                    ).alias("fraction_target_offset_y_exceeding_20"),
+                    (
+                        (
+                            (
+                                (3.125 / pl.col("target_offset_xz"))
+                                .arccos()
+                                .fill_nan(0)
+                                * 2
+                                / np.pi
+                            ).mean()
+                        ).alias("fraction_target_offset_xz_exceeding_3.125")
+                    ),
+                    (
+                        (
+                            (
+                                (4 / pl.col("target_offset_xz")).arccos().fill_nan(0)
+                                * 2
+                                / np.pi
+                            ).mean()
+                        ).alias("fraction_target_offset_xz_exceeding_4")
+                    ),
+                ]
+            )
+        )
+        # Return combined calculated metrics
+        return pl.concat(df_results, how="horizontal")
+
+    @staticmethod
+    def _fraction_less_than_threshold(
+        metrics: pl.DataFrame,
+        offset_type: str = "target_offset_vector",
+        threshold_step: float = 1,
+    ) -> pl.DataFrame:
+        """Calculates the fraction of motion statistics less than thresholds,
+        intended to provide insight on margin selection.
+
+        Parameters
+        ----------
+        metrics : pl.DataFrame
+            The motion metrics containing offset percentiles r80, r90, r95 and r100.
+        offset_type : str, optional
+            The motion metric percentiles to evaluate against thresholds. Default is
+            "target_offset_vector".
+        threshold_step : float, optional
+            Step width to use to define thresholds against which to evaluate offset
+            percentiles, in mm. Default is 1.
+
+        Returns
+        -------
+        pl.DataFrame
+            DataFrame containing defining fraction of offset percentiles less than
+            calculated thresholds.
+
+        Notes
+        -----
+        This calculation is inspired by Figure 5(b) of Li et al. (2008), available at
+        DOI:10.1016/j.ijrobp.2007.10.049.
+        """
+        r80 = metrics.select(pl.col(f"80th_percentile_{offset_type}")).to_numpy()
+        r90 = metrics.select(pl.col(f"90th_percentile_{offset_type}")).to_numpy()
+        r95 = metrics.select(pl.col(f"95th_percentile_{offset_type}")).to_numpy()
+        r100 = metrics.select(pl.col(f"maximum_{offset_type}")).to_numpy()
+        result_dict = {}
+        thresholds = np.arange(
+            0, int(np.max(np.ceil(r100))) + threshold_step, threshold_step
+        )
+        result_dict["thresholds"] = thresholds
+        result_dict["fraction_r80"] = [
+            np.count_nonzero(r80 < threshold) / len(r80) for threshold in thresholds
+        ]
+        result_dict["fraction_r90"] = [
+            np.count_nonzero(r90 < threshold) / len(r90) for threshold in thresholds
+        ]
+        result_dict["fraction_r95"] = [
+            np.count_nonzero(r95 < threshold) / len(r95) for threshold in thresholds
+        ]
+        result_dict["fraction_r100"] = [
+            np.count_nonzero(r100 < threshold) / len(r100) for threshold in thresholds
+        ]
+        return pl.DataFrame(result_dict)
+
+    @staticmethod
+    def _plot_fraction_less_than_threshold(
+        fraction_less_than_threshold_df: pl.DataFrame,
+        grouping: str,
+        offset_type: str,
+        figsize=(12, 4),
+    ) -> mpl.Figure:
+        """Plots offset percentile fractions less than threshold data.
+
+        Parameters
+        ----------
+        fraction_less_than_threshold_df : pl.DataFrame
+            DataFrame containing offset percentile fraction less than threshold data.
+        grouping : str, optional
+            Description of grouping used for dataframe. E.g., "patients" or "session".
+        offset_type : str, optional
+            The motion metric percentiles to evaluate against thresholds.
+        figsize : tuple, optional
+            Figure size. Default is (12, 4), i.e., 12 by 4 inches.
+
+        Returns
+        -------
+        mpl.Figure
+            Figure showing fraction of offset percentiles less than a threshold.
+
+        Notes
+        -----
+        This figure is inspired by Figure 5(b) of Li et al. (2008), available at
+        DOI:10.1016/j.ijrobp.2007.10.049.
+        """
+        offset_type_label = (
+            (" ".join([offset_type.split("_")[-1]] + offset_type.split("_")[0:-1]))
+            .replace("x ", "IEC-X ")
+            .replace("y ", "IEC-Y ")
+            .replace("z ", "IEC-Z ")
+            .replace("delta ", "Relative ")
+            .replace("vector ", "Vector ")
+            .replace(" Vector", " vector")
+        )
+        fig, ax = plt.subplots(1, 1, figsize=figsize)
+        ax.axhline(0.95, color="grey", linestyle="--")
+        ax.plot(
+            fraction_less_than_threshold_df["thresholds"],
+            fraction_less_than_threshold_df["fraction_r80"],
+            label="for 80% tracking time",
+        )
+        ax.plot(
+            fraction_less_than_threshold_df["thresholds"],
+            fraction_less_than_threshold_df["fraction_r90"],
+            label="for 90% tracking time",
+        )
+        ax.plot(
+            fraction_less_than_threshold_df["thresholds"],
+            fraction_less_than_threshold_df["fraction_r95"],
+            label="for 95% tracking time",
+        )
+        ax.plot(
+            fraction_less_than_threshold_df["thresholds"],
+            fraction_less_than_threshold_df["fraction_r100"],
+            label="for 100% tracking time",
+        )
+        ax.set_xlim(
+            fraction_less_than_threshold_df["thresholds"][0],
+            fraction_less_than_threshold_df["thresholds"][-1],
+        )
+        ax.yaxis.set_major_formatter(mtick.PercentFormatter(xmax=1))
+        ax.set_xlabel(f"{offset_type_label} threshold (mm)")
+        y_label = offset_type_label.replace("Relative", "relative").replace(
+            "Vector", "vector"
+        )
+        ax.set_ylabel(f"Percentage of {grouping} with \n{y_label} less than threshold")
+        ax.legend()
+        return fig
 
     # endregion
