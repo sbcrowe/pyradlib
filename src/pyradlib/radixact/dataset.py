@@ -16,6 +16,7 @@ __license__ = "GPL3"
 import glob
 import logging
 import os
+import shutil
 import xml.etree.ElementTree as et
 from functools import cached_property
 
@@ -38,6 +39,40 @@ logger = logging.getLogger(__name__)
 
 
 class RadixactDataset:
+    # region Constants
+
+    _DEFAULT_EXTENSIONS = {
+        "Detector Sinogram": "det",
+        "Dose Distribution": "dcm",
+        "Motion Data": "xml",
+        "Plan": "dcm",
+        "Plan Details": "xml",
+        "Plan Information": "xml",
+        "Plan Settings": "txt",
+        "Plan Sinogram": "dplan",
+        "Record": "dcm",
+        "Structure Set": "dcm",
+        "Telemetry Sinogram": "dplan",
+        "Telemetry Timing": "dat",
+    }
+
+    _DEFAULT_PREFIXES = {
+        "Detector Sinogram": "detectorfluence",
+        "Dose Distribution": "rtdose",
+        "Motion Data": "motiondata",
+        "Plan": "rtplan",
+        "Plan Details": "plandetails",
+        "Plan Information": "planinfo",
+        "Plan Settings": "plansettings",
+        "Plan Sinogram": "planfluence",
+        "Record": "rtrecord",
+        "Structure Set": "rtss",
+        "Telemetry Sinogram": "telemfluence",
+        "Telemetry Timing": "telemtiming",
+    }
+
+    # endregion
+
     # region Constructors
 
     def __init__(self, files: pl.DataFrame) -> RadixactDataset:
@@ -98,7 +133,9 @@ class RadixactDataset:
         folder, e.g., containing DetectorByProj*.det, TelemFluence_*.dplan, and
         FinalDeliveryPlan*.dplan files.
         """
-        return cls.from_path_list(sorted(os.listdir(path)))
+        return cls.from_path_list(
+            sorted([os.path.join(path, filename) for filename in os.listdir(path)])
+        )
 
     @classmethod
     def from_path(cls, path: str | os.PathLike) -> RadixactDataset:
@@ -687,6 +724,42 @@ class RadixactDataset:
         for index, motion in enumerate(self.motions):
             motion.to_npz(os.path.join(path, f"motiondata_{index + 1:03d}"))
 
+    def save_copy(
+        self,
+        path: str | os.PathLike,
+        types: list[str] = [
+            "Detector Sinogram",
+            "Motion Data",
+            "Plan",
+            "Plan Details",
+            "Plan Information",
+            "Plan Settings",
+            "Plan Sinogram",
+            "Record",
+            "Telemetry Sinogram",
+            "Telemetry Timing",
+        ],
+    ) -> None:
+        """Save copies of dataset files in a directory.
+
+        Parameters
+        ----------
+        path : str | os.PathLike
+            Path to which the compressed files should be saved.
+        types : list[str], optional
+            List of file types to save copies of.
+        """
+        for type in types:
+            for index, src_path in enumerate(self._get_filtered_series_list(type)):
+                shutil.copy(
+                    src_path,
+                    os.path.join(
+                        path,
+                        f"{self._DEFAULT_PREFIXES[type]}_{index + 1:02}"
+                        + f".{self._DEFAULT_EXTENSIONS[type]}",
+                    ),
+                )
+
     # endregion
 
     # region Private methods
@@ -810,33 +883,35 @@ class RadixactDataset:
         pl.DataFrame
             DataFrame containing file paths categorised according to file type.
         """
-        return df.with_columns(
-            pl.when(pl.col(series_name).str.contains("(?i)detectorbyproj"))
-            .then(pl.lit("Detector Sinogram"))
-            .when(pl.col(series_name).str.contains("(?i)finaldoseinfo_rtdose"))
-            .then(pl.lit("Dose Distribution"))
-            .when(pl.col(series_name).str.contains("(?i)motiondata"))
-            .then(pl.lit("Motion Data"))
-            .when(pl.col(series_name).str.contains("(?i)rtplan"))
-            .then(pl.lit("Plan"))
-            .when(pl.col(series_name).str.contains("(?i)tomoplandetails"))
-            .then(pl.lit("Plan Details"))
-            .when(pl.col(series_name).str.contains("(?i)generalplan"))
-            .then(pl.lit("Plan Information"))
-            .when(pl.col(series_name).str.contains("(?i)plan.settings"))
-            .then(pl.lit("Plan Settings"))
-            .when(pl.col(series_name).str.contains("(?i)finaldeliveryplan"))
-            .then(pl.lit("Plan Sinogram"))
-            .when(pl.col(series_name).str.contains("(?i)rtrecord"))
-            .then(pl.lit("Radiation Record"))
-            .when(pl.col(series_name).str.contains("(?i)rtss"))
-            .then(pl.lit("Structure Set"))
-            .when(pl.col(series_name).str.contains("(?i)telemfluence"))
-            .then(pl.lit("Telemetry Sinogram"))
-            .when(pl.col(series_name).str.contains("(?i)telemtiming"))
-            .then(pl.lit("Telemetry Timing"))
-            .otherwise(pl.lit("Unknown"))
-            .alias("type")
-        )
+        conditions = {
+            "Detector Sinogram": pl.col(series_name).str.contains(
+                "(?i)detector(byproj|fluence)"
+            ),
+            "Dose Distribution": pl.col(series_name).str.contains("(?i)rtdose"),
+            "Motion Data": pl.col(series_name).str.contains("(?i)motiondata"),
+            "Optimizer Dose Distribution": pl.col(series_name).str.contains(
+                "(?i)optimizationdoseinfo_rtdose"
+            ),
+            "PreciseART Dose Distribution": pl.col(series_name).str.contains(
+                "(?i)MIM_SERIES.*rtdose"
+            ),
+            "Plan": pl.col(series_name).str.contains("(?i)rtplan"),
+            "Plan Details": pl.col(series_name).str.contains("(?i)plandetails"),
+            "Plan Information": pl.col(series_name).str.contains(
+                "(?i)(generalplan|planinfo)"
+            ),
+            "Plan Settings": pl.col(series_name).str.contains("(?i)plan.*settings"),
+            "Plan Sinogram": pl.col(series_name).str.contains(
+                "(?i)(finaldeliveryplan|planfluence)"
+            ),
+            "Record": pl.col(series_name).str.contains("(?i)rtrecord"),
+            "Structure Set": pl.col(series_name).str.contains("(?i)rtss"),
+            "Telemetry Sinogram": pl.col(series_name).str.contains("(?i)telemfluence"),
+            "Telemetry Timing": pl.col(series_name).str.contains("(?i)telemtiming"),
+        }
+        expr = pl.lit("Unknown")
+        for type, condition in conditions.items():
+            expr = pl.when(condition).then(pl.lit(type)).otherwise(expr)
+        return df.with_columns(expr.alias("type"))
 
     # end region
