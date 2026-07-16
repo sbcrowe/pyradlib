@@ -64,46 +64,51 @@ class RadixactTiming:
         timestamps = []
         taus = []
         for n in range(int(timing_text[1])):
-            timing_timestamps = np.array(
-                [
-                    x * 1000000 + y
-                    for x, y in zip(
-                        list(map(int, timing_text[3 + n * 9].split(","))),
-                        list(map(int, timing_text[4 + n * 9].split(","))),
-                    )
-                    if x > 0
-                ]
-            )
-            timing_start_taus = np.array(
-                [
-                    x
-                    for x in list(map(float, timing_text[5 + n * 9].split(",")))
-                    if x > 0
-                ]
-            )
-            timing_end_taus = np.array(
-                [
-                    x
-                    for x in list(map(float, timing_text[6 + n * 9].split(",")))
-                    if x > 0
-                ]
-            )
-            timing_intervals = np.array(
-                [
-                    x
-                    for x in list(map(float, timing_text[7 + n * 9].split(",")))
-                    if x > 0
-                ]
-            )
-            for timestamp, start_tau, end_tau, interval in zip(
-                timing_timestamps, timing_start_taus, timing_end_taus, timing_intervals
-            ):
-                timestamps.append(timestamp)
-                timestamps.append(
-                    timestamp + int((end_tau - start_tau) * interval * 1000000)
+            # check for empty record
+            if len(timing_text[3 + n * 9]) > 0:
+                timing_timestamps = np.array(
+                    [
+                        x * 1000000 + y
+                        for x, y in zip(
+                            list(map(int, timing_text[3 + n * 9].split(","))),
+                            list(map(int, timing_text[4 + n * 9].split(","))),
+                        )
+                        if x > 0
+                    ]
                 )
-                taus.append(start_tau)
-                taus.append(end_tau)
+                timing_start_taus = np.array(
+                    [
+                        x
+                        for x in list(map(float, timing_text[5 + n * 9].split(",")))
+                        if x > 0
+                    ]
+                )
+                timing_end_taus = np.array(
+                    [
+                        x
+                        for x in list(map(float, timing_text[6 + n * 9].split(",")))
+                        if x > 0
+                    ]
+                )
+                timing_intervals = np.array(
+                    [
+                        x
+                        for x in list(map(float, timing_text[7 + n * 9].split(",")))
+                        if x > 0
+                    ]
+                )
+                for timestamp, start_tau, end_tau, interval in zip(
+                    timing_timestamps,
+                    timing_start_taus,
+                    timing_end_taus,
+                    timing_intervals,
+                ):
+                    timestamps.append(timestamp)
+                    timestamps.append(
+                        timestamp + int((end_tau - start_tau) * interval * 1000000)
+                    )
+                    taus.append(start_tau)
+                    taus.append(end_tau)
         data = pl.DataFrame({"tau": taus, "timestamp": timestamps})
         data = data.with_columns(
             pl.from_epoch("timestamp", time_unit="us").alias("datetime")
