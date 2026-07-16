@@ -192,7 +192,7 @@ class RadixactDataset:
         str
             Representation of the object.
         """
-        return f"RadixactDataset(label={self._label})"
+        return f"RadixactDataset(num_files={len(self._files)})"
 
     # endregion
 
@@ -518,41 +518,14 @@ class RadixactDataset:
         telemetry_sinogram_files = self._get_filtered_series_list(
             "Telemetry Sinogram", series="curr_path"
         )
-        telemetry_sinogram_orig_paths = self._get_filtered_series_list(
-            "Telemetry Sinogram", series="orig_path"
-        )
         if len(telemetry_sinogram_files) == 0:
             logger.debug("Dataset contains no telemetry sinogram files")
             return telemetry_sinograms
         else:
-            if len(telemetry_sinogram_files) == len(self.telemetry_timings):
-                telemetry_timing_dict = {
-                    timing._uid: timing for timing in self.telemetry_timings
-                }
-            for (
-                telemetry_sinogram_file,
-                telemetry_sinogram_orig_path,
-            ) in zip(
-                telemetry_sinogram_files,
-                telemetry_sinogram_orig_paths,
-            ):
-                uid = (
-                    telemetry_sinogram_orig_path.split("\\")[-1]
-                    .replace("TelemFluence_", "")
-                    .replace(".dplan", "")
+            for telemetry_sinogram_file in telemetry_sinogram_files:
+                telemetry_sinograms.append(
+                    RadixactSinogram.from_dplan(telemetry_sinogram_file)
                 )
-                if len(telemetry_sinogram_files) == len(self.telemetry_timings):
-                    logger.debug(f"Loading {telemetry_sinogram_file}, applying timing")
-                    telemetry_sinograms.append(
-                        RadixactSinogram.from_dplan(
-                            telemetry_sinogram_file, uid
-                        ).apply_timing(telemetry_timing_dict[uid])
-                    )
-                else:
-                    logger.debug(f"Loading {telemetry_sinogram_file}")
-                    telemetry_sinograms.append(
-                        RadixactSinogram.from_dplan(telemetry_sinogram_file, uid)
-                    )
             return telemetry_sinograms
 
     @cached_property
@@ -568,25 +541,11 @@ class RadixactDataset:
         telemetry_timing_files = self._get_filtered_series_list(
             "Telemetry Timing", series="curr_path"
         )
-        telemetry_timing_orig_paths = self._get_filtered_series_list(
-            "Telemetry Timing", series="orig_path"
-        )
         if len(telemetry_timing_files) == 0:
             return telemetry_timings
         else:
-            for telemetry_timing_file, telemetry_timing_orig_path in zip(
-                telemetry_timing_files, telemetry_timing_orig_paths
-            ):
-                uid = (
-                    telemetry_timing_orig_path.split("\\")[-1]
-                    .replace("TelemTiming_", "")
-                    .replace(".dat", "")
-                )
-                logger.debug(f"Loading {telemetry_timing_file}")
-                telemetry_timings.append(
-                    RadixactTiming.from_dat(telemetry_timing_file, uid)
-                )
-            logger.info(f"Loaded {len(telemetry_timings)} telemetry timing files")
+            for telemetry_timing_file in telemetry_timing_files:
+                telemetry_timings.append(RadixactTiming.from_dat(telemetry_timing_file))
             return telemetry_timings
 
     # endregion
@@ -755,7 +714,7 @@ class RadixactDataset:
                     src_path,
                     os.path.join(
                         path,
-                        f"{self._DEFAULT_PREFIXES[type]}_{index + 1:02}"
+                        f"{self._DEFAULT_PREFIXES[type]}_{index + 1:03d}"
                         + f".{self._DEFAULT_EXTENSIONS[type]}",
                     ),
                 )
