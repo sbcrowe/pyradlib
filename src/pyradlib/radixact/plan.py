@@ -237,6 +237,21 @@ class RadixactPlanDetails:
 
     # endregion
 
+    # region Property
+
+    @property
+    def summary(self) -> pl.DataFrame:
+        """Produce summary of treatment plan defails.
+
+        Returns
+        -------
+        pl.DataFrame
+            DataFrame containing treatment plan defails.
+        """
+        return self._df
+
+    # endregion
+
 
 # endregion
 
@@ -372,6 +387,21 @@ class RadixactPlanInformation:
             {"voi": vois, "metric": metrics, "objective": objectives}
         )
         return cls(pl.DataFrame(profile_data), objectives_df)
+
+    # endregion
+
+    # region Properties
+
+    @property
+    def summary(self) -> pl.DataFrame:
+        """Produce summary of treatment plan information.
+
+        Returns
+        -------
+        pl.DataFrame
+            DataFrame containing treatment plan information.
+        """
+        return self._df
 
     # endregion
 
