@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Motion analysis module.
 
 This module provides functionality for processing of motion data from Synchrony treatments.
@@ -18,11 +17,11 @@ from functools import cached_property
 import matplotlib as mpl
 import matplotlib.patches as mpatches
 import matplotlib.pyplot as plt
-import matplotlib.ticker as ticker
 import numpy as np
 import numpy.typing as npt
 import polars as pl
 import pydicom
+from matplotlib import ticker
 from scipy import stats
 from scipy.ndimage import center_of_mass, shift
 
@@ -755,10 +754,11 @@ class RadixactSinogram:
         ArrayLike
             Leaf open times in milliseconds.
         """
-        return (
-            self._df.get_column("channel_values").to_numpy()
-            * self._df.get_column("time").to_numpy()[:, np.newaxis]
-        )
+        projection_time = (
+            self._df.get_column("time").to_numpy()[1]
+            - self._df.get_column("time").to_numpy()[0]
+        ) * 1000
+        return self._df.get_column("channel_values").to_numpy() * projection_time
 
     def to_csv(self, path: str | os.PathLike):
         """Writes sinogram leaf open times or channel signal data to CSV file.
