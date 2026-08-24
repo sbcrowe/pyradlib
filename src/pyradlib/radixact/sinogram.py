@@ -754,11 +754,21 @@ class RadixactSinogram:
         ArrayLike
             Leaf open times in milliseconds.
         """
-        projection_time = (
+        projection_time = self.projection_duration()
+        return self._df.get_column("channel_values").to_numpy() * projection_time
+
+    def projection_duration(self) -> float:
+        """Calculates the projection duration in milliseconds.
+
+        Returns
+        -------
+        float
+            Projection duration, in milliseconds.
+        """
+        return (
             self._df.get_column("time").to_numpy()[1]
             - self._df.get_column("time").to_numpy()[0]
         ) * 1000
-        return self._df.get_column("channel_values").to_numpy() * projection_time
 
     def to_csv(self, path: str | os.PathLike):
         """Writes sinogram leaf open times or channel signal data to CSV file.
