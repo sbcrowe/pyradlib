@@ -770,7 +770,7 @@ class RadixactSynchronyMotion:
         path : str | os.PathLike
             Path for npz file to be written.
         compress : bool, optional
-            Flag to indicate whether to compress npz, . Default is True.
+            Flag to indicate whether to compress npz. Default is True.
         """
         data_dict = {}
         if "timestamp" in self._df:

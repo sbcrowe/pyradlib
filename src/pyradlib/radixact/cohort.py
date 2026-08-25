@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """RadixactDatasetCohort module.
 
 This module provides functionality for processing cohorts of data from Radixact
@@ -66,7 +65,7 @@ class RadixactDatasetCohort:
         return cls.from_path_list(
             [
                 os.path.join(path, dir)
-                for dir in os.path.sorted(os.listdir(path))
+                for dir in sorted(os.listdir(path))
                 if os.path.isdir(os.path.join(path, dir))
             ]
         )
@@ -114,7 +113,7 @@ class RadixactDatasetCohort:
         str
             Representation of the object.
         """
-        return f"RadixactDatasetCohort(num_datasets={str(len(self._df))}"
+        return f"RadixactDatasetCohort(num_datasets={len(self._df)!s}"
 
     # endregion
 
@@ -211,6 +210,31 @@ class RadixactDatasetCohort:
                     )
                 )
             return pl.concat(plan_settings_summaries).select(
+                [pl.col("patient_index"), pl.all().exclude("patient_index")]
+            )
+
+    @cached_property
+    def telemetry_metrics(self) -> pl.DataFrame:
+        """Returns concatenated telemetry metrics for patient cohort.
+
+        Returns
+        -------
+        pl.DataFrame
+            Concatenated telemetric metrics.
+        """
+        if len(self._df) == 0:
+            return None
+        else:
+            telemetry_metrics = []
+            for patient_index, dir in enumerate(self._df["path"]):
+                ds = RadixactDataset.from_path(dir)
+                if len(ds.telemetry_sinograms) > 0:
+                    telemetry_metrics.append(
+                        ds.telemetry_metrics.with_columns(
+                            patient_index=pl.lit(patient_index)
+                        )
+                    )
+            return pl.concat(telemetry_metrics).select(
                 [pl.col("patient_index"), pl.all().exclude("patient_index")]
             )
 

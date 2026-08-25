@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """RadixactDataset module.
 
 This module provides functionality for processing of data from Radixact treatments.
@@ -21,6 +20,7 @@ import xml.etree.ElementTree as et
 from functools import cached_property
 
 import matplotlib as mpl
+import numpy as np
 import polars as pl
 import pydicom
 import seaborn as sns
@@ -503,6 +503,46 @@ class RadixactDataset:
             return structure_sets
 
     @cached_property
+    def telemetry_metrics(self) -> pl.DataFrame:
+        results = []
+        for session_index, telemetry_sinogram in enumerate(self.telemetry_sinograms):
+            plan_sinogram = self._find_matching_planned_sinogram(telemetry_sinogram)
+            if plan_sinogram is None:
+                continue
+            error_projections = plan_sinogram.detect_fluence_errors(telemetry_sinogram)
+            error_transitions = np.diff(
+                np.concatenate(([False], error_projections, [False])).astype(int)
+            )
+            error_lengths = (
+                np.where(error_transitions == -1)[0]
+                - np.where(error_transitions == 1)[0]
+            )
+            results.append(
+                {
+                    "session_index": int(session_index),
+                    "num_fluence_variations": len(error_lengths),
+                    "num_projections_with_fluence_variations": int(
+                        np.sum(error_projections)
+                    ),
+                    "longest_fluence_variation_duration": int(np.max(error_lengths))
+                    if error_lengths.size > 0
+                    else 0,
+                    "longest_fluence_variation_duration_ms": int(np.max(error_lengths))
+                    * telemetry_sinogram.projection_duration()
+                    if error_lengths.size > 0
+                    else 0.0,
+                    "planned_zero_lot_projections": np.count_nonzero(
+                        np.sum(plan_sinogram.fractional_leaf_open_times(), axis=1) == 0
+                    ),
+                    "telemetry_zero_lot_projections": np.count_nonzero(
+                        np.sum(telemetry_sinogram.fractional_leaf_open_times(), axis=1)
+                        == 0
+                    ),
+                }
+            )
+        return pl.DataFrame(results)
+
+    @cached_property
     def telemetry_sinograms(self) -> list[RadixactSinogram]:
         """Returns list containing telemetry sinograms from fractional deliveries.
 
@@ -722,6 +762,32 @@ class RadixactDataset:
     # endregion
 
     # region Private methods
+
+    def _find_matching_planned_sinogram(self, telemetry_sinogram) -> RadixactSinogram:
+        telemetry_sinogram_total_lots = np.sum(
+            telemetry_sinogram.fractional_leaf_open_times(), axis=1
+        )
+        # TODO identify correct plan more effeciently
+        # TODO handle incomplete delivery sessions
+        matching_sinogram = None
+        matching_sinogram_total_lot_difference = np.inf
+        for plan_sinogram in self.plan_sinograms:
+            if len(plan_sinogram) == len(telemetry_sinogram):
+                plan_sinogram_total_lots = np.sum(
+                    plan_sinogram.fractional_leaf_open_times(), axis=1
+                )
+                plan_sinogram_total_lot_difference = np.sum(
+                    np.abs(plan_sinogram_total_lots - telemetry_sinogram_total_lots)
+                )
+                if (
+                    plan_sinogram_total_lot_difference
+                    < matching_sinogram_total_lot_difference
+                ):
+                    matching_sinogram = plan_sinogram
+                    matching_sinogram_total_lot_difference = (
+                        plan_sinogram_total_lot_difference
+                    )
+        return matching_sinogram
 
     def _get_filtered_series_list(self, type: str, series="curr_path") -> list[str]:
         """Returns a list of paths for files with specified type filter.
