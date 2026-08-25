@@ -198,6 +198,25 @@ class RadixactDataset:
 
     # region Properties
 
+    @property
+    def combined_plan_summary(self) -> pl.DataFrame:
+        """Return joined plan, plan detail and plan information summaries.
+
+        Returns
+        -------
+        pl.DataFrame
+            Combined plan, plan detail and plan information summaries.
+        """
+        shared_plan_detail_columns = list(
+            set(self.plan_summary.columns) & set(self.plan_details_summary.columns)
+        )
+        shared_plan_info_columns = list(
+            set(self.plan_summary.columns) & set(self.plan_informations_summary.columns)
+        )
+        return self.plan_summary.join(
+            self.plan_details_summary, on=shared_plan_detail_columns, how="inner"
+        ).join(self.plan_informations[0]._df, on=shared_plan_info_columns, how="inner")
+
     @cached_property
     def detector_sinograms(self) -> list[RadixactSinogram]:
         """Returns list containing detector sinograms.
@@ -298,6 +317,40 @@ class RadixactDataset:
                     motions.append(motion)
             logger.info(f"Loaded {len(motions)} motion data files")
             return motions
+
+    @cached_property
+    def plan_details_summary(self) -> pl.DataFrame:
+        """Produce summary of treatment plan details, for all plans in the dataset.
+
+        Returns
+        -------
+        pl.DataFrame
+            DataFrame containing treatment plan details, for all plans in the
+            dataset.
+        """
+        return pl.concat(
+            [
+                plan_details.summary.with_columns(plan_index=pl.lit(key))
+                for key, plan_details in enumerate(self.plan_details)
+            ]
+        ).select([pl.col("plan_index"), pl.all().exclude("plan_index")])
+
+    @cached_property
+    def plan_informations_summary(self) -> pl.DataFrame:
+        """Produce summary of treatment plan information, for all plans in the dataset.
+
+        Returns
+        -------
+        pl.DataFrame
+            DataFrame containing treatment plan information, for all plans in the
+            dataset.
+        """
+        return pl.concat(
+            [
+                plan_information.summary.with_columns(plan_set_index=pl.lit(key))
+                for key, plan_information in enumerate(self.plan_informations)
+            ]
+        ).select([pl.col("plan_set_index"), pl.all().exclude("plan_set_index")])
 
     @cached_property
     def plans(self) -> list[RadixactPlan]:

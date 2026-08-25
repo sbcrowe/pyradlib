@@ -241,12 +241,12 @@ class RadixactPlanDetails:
 
     @property
     def summary(self) -> pl.DataFrame:
-        """Produce summary of treatment plan defails.
+        """Produce summary of treatment plan details.
 
         Returns
         -------
         pl.DataFrame
-            DataFrame containing treatment plan defails.
+            DataFrame containing treatment plan details.
         """
         return self._df
 
