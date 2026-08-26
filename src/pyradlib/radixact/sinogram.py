@@ -696,13 +696,45 @@ class RadixactSinogram:
                 )
         return estimated_shift
 
+    def detect_fluence_variations(
+        self,
+        other: RadixactSinogram,
+        flot_threshold=0.1,
+    ) -> npt.ArrayLike:
+        """Detects projections containing adaptation (or errors).
+
+        Parameters
+        ----------
+        other : RadixactSinogram
+            The (telemetry or expected adaptation) sinogram against which to compare
+            fractional leaf open times.
+        flot_threshold : float, optional
+            Threshold for fractional leaf open time variation. Default is 0.1.
+
+        Returns
+        -------
+        npt.ArrayLike
+            Sinogram row mask containg True and False values, where a fractional
+            leaf open time exceeding the threshold occurs within a projection.
+        """
+        detected_adaptations = []
+        for self_row, other_row in zip(
+            self.fractional_leaf_open_times(),
+            other.fractional_leaf_open_times(),
+        ):
+            if np.any(np.abs(self_row - other_row) > flot_threshold):
+                detected_adaptations.append(True)
+            else:
+                detected_adaptations.append(False)
+        return detected_adaptations
+
     def detect_fluence_errors(
         self,
         other: RadixactSinogram,
         error_detection_mode="integrated-leaf-open-time",
         total_flot_error_threshold=0.5,
     ) -> npt.ArrayLike:
-        """_summary_
+        """Detects projections containing where fluence errors have occured.
 
         Parameters
         ----------
@@ -712,7 +744,7 @@ class RadixactSinogram:
             Method to use to detect leaf adaptation errors. Default is
             "integrated-leaf-open-time".
         total_flot_error_threshold : float, optional
-            Threshold for projection total fractional leaf open time. Default 0.5.
+            Threshold for projection total fractional leaf open time. Default is 0.5.
 
         Returns
         -------
@@ -1220,6 +1252,15 @@ class RadixactSinogram:
         axs[3].legend(
             loc="lower center", handles=expected_handles, labels=expected_labels, ncol=4
         )
+        expected_variations = 1 - np.sum(expected_row_mask) / len(expected_row_mask)
+        axs[3].text(
+            1,
+            0.9,
+            f"Expected projections with variations = {expected_variations * 100:.0f}% ",
+            horizontalalignment="right",
+            verticalalignment="center",
+            transform=axs[3].transAxes,
+        )
         secax3 = axs[3].secondary_xaxis(
             "top", functions=(proj_to_rotation, rotation_to_proj)
         )
@@ -1328,6 +1369,15 @@ class RadixactSinogram:
         axs[4].set_ylabel("Leaf")
         axs[4].yaxis.set_major_locator(plt.MultipleLocator(multiple_locator_divisor))
         axs[4].legend(loc="lower center", handles=handles, labels=labels, ncol=3)
+        telemetry_variations = 1 - np.sum(telemetry_row_mask) / len(telemetry_row_mask)
+        axs[4].text(
+            1,
+            0.9,
+            f"Projections with variations = {telemetry_variations * 100:.0f}% ",
+            horizontalalignment="right",
+            verticalalignment="center",
+            transform=axs[4].transAxes,
+        )
         secax4 = axs[4].secondary_xaxis(
             "top", functions=(proj_to_rotation, rotation_to_proj)
         )

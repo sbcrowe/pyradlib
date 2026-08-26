@@ -563,6 +563,9 @@ class RadixactDataset:
             if plan_sinogram is None:
                 continue
             error_projections = plan_sinogram.detect_fluence_errors(telemetry_sinogram)
+            fluence_variation_projections = plan_sinogram.detect_fluence_variations(
+                telemetry_sinogram
+            )
             error_transitions = np.diff(
                 np.concatenate(([False], error_projections, [False])).astype(int)
             )
@@ -576,6 +579,9 @@ class RadixactDataset:
                     "num_fluence_variations": len(error_lengths),
                     "num_projections_with_fluence_variations": int(
                         np.sum(error_projections)
+                    ),
+                    "num_projections_with_adaptation": int(
+                        np.sum(fluence_variation_projections)
                     ),
                     "longest_fluence_variation_duration": int(np.max(error_lengths))
                     if error_lengths.size > 0
