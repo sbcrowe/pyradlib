@@ -18,6 +18,7 @@ import os
 import shutil
 import xml.etree.ElementTree as et
 from functools import cached_property
+from typing import ClassVar
 
 import matplotlib as mpl
 import numpy as np
@@ -39,9 +40,9 @@ logger = logging.getLogger(__name__)
 
 
 class RadixactDataset:
-    # region Constants
+    # region Class variables
 
-    _DEFAULT_EXTENSIONS = {
+    _DEFAULT_EXTENSIONS: ClassVar[dict[str, str]] = {
         "Detector Sinogram": "det",
         "Dose Distribution": "dcm",
         "Motion Data": "xml",
@@ -56,7 +57,7 @@ class RadixactDataset:
         "Telemetry Timing": "dat",
     }
 
-    _DEFAULT_PREFIXES = {
+    _DEFAULT_PREFIXES: ClassVar[dict[str, str]] = {
         "Detector Sinogram": "detectorfluence",
         "Dose Distribution": "rtdose",
         "Motion Data": "motiondata",
@@ -89,7 +90,7 @@ class RadixactDataset:
             The encapsulated dataset object.
         """
         self._files = files
-        logger.debug(f"Dataset contains {len(self._files)} files")
+        logger.info(f"Dataset initialised with {len(self._files)!s} files")
 
     @classmethod
     def from_data_extractor(cls, path: str | os.PathLike) -> RadixactDataset:
@@ -192,7 +193,7 @@ class RadixactDataset:
         str
             Representation of the object.
         """
-        return f"RadixactDataset(num_files={len(self._files)})"
+        return f"RadixactDataset(num_files={len(self._files)!s})"
 
     # endregion
 
@@ -653,15 +654,7 @@ class RadixactDataset:
 
     def plot_session_motions(
         self,
-        parameters: list[str] = [
-            "target_offset_x",
-            "target_offset_y",
-            "target_offset_z",
-            "target_offset_vector",
-            "potential_diff",
-            "measured_diff",
-            "rigid_body",
-        ],
+        parameters: list[str] | None = None,
         col_wrap: int = 4,
     ) -> mpl.Figure:
         """Prepares relational line plot for parameter distances, with each session as
@@ -681,8 +674,8 @@ class RadixactDataset:
                 Measured delta or difference between observed and calculated offset.
             "rigid_body"
                 Rigid body value describing deformation of fiducial distribution.
-            Default is [ "target_offset_x", "target_offset_y", "target_offset_z",
-            "potential_diff", "measured_diff", "rigid_body" ]
+            Default is None, in which case target_offset_x, target_offset_y,
+            target_offset_z, potential_diff, measured_diff and rigid_body are used.
         col_wrap : int, optional
             Number of columns in figure. Default is 4.
 
@@ -691,6 +684,18 @@ class RadixactDataset:
         mpl.Figure
             Relational line plot for parameter distances.
         """
+        if parameters is None:
+            parameters = (
+                [
+                    "target_offset_x",
+                    "target_offset_y",
+                    "target_offset_z",
+                    "target_offset_vector",
+                    "potential_diff",
+                    "measured_diff",
+                    "rigid_body",
+                ],
+            )
         mapping = {
             "target_offset_x": "IEC-X target offset",
             "target_offset_y": "IEC-Y target offset",
@@ -785,28 +790,33 @@ class RadixactDataset:
     def save_copy(
         self,
         path: str | os.PathLike,
-        types: list[str] = [
-            "Detector Sinogram",
-            "Motion Data",
-            "Plan",
-            "Plan Details",
-            "Plan Information",
-            "Plan Settings",
-            "Plan Sinogram",
-            "Record",
-            "Telemetry Sinogram",
-            "Telemetry Timing",
-        ],
+        types: list[str] | None = None,
     ) -> None:
         """Save copies of dataset files in a directory.
 
         Parameters
         ----------
         path : str | os.PathLike
-            Path to which the compressed files should be saved.
+            Path to which the copied files should be saved.
         types : list[str], optional
-            List of file types to save copies of.
+            List of file types to save copies of. Default is None, in which case
+            Detector Sinogram, Motion Data, Plan, Plan Details, Plan Information,
+            Plan Sinogram, Record, Telemetry Sinogram and Telemetry Timing files
+            will be copied.
         """
+        if types is None:
+            types = [
+                "Detector Sinogram",
+                "Motion Data",
+                "Plan",
+                "Plan Details",
+                "Plan Information",
+                "Plan Settings",
+                "Plan Sinogram",
+                "Record",
+                "Telemetry Sinogram",
+                "Telemetry Timing",
+            ]
         for type in types:
             for index, src_path in enumerate(self._get_filtered_series_list(type)):
                 shutil.copy(
