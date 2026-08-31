@@ -45,7 +45,7 @@ class RadixactDatasetCohort:
             The encapsulated cohort dataset object.
         """
         self._df = df
-        logger.debug(f"Cohort contains {len(self._df)} patients")
+        logger.info(f"Cohort initialised with {len(self._df)} patients")
 
     @classmethod
     def from_path(cls, path: str | os.PathLike) -> RadixactDatasetCohort:
@@ -113,7 +113,7 @@ class RadixactDatasetCohort:
         str
             Representation of the object.
         """
-        return f"RadixactDatasetCohort(num_datasets={len(self._df)!s}"
+        return f"RadixactDatasetCohort(num_datasets={len(self._df)}"
 
     # endregion
 
@@ -300,11 +300,11 @@ class RadixactDatasetCohort:
         self,
         mode: str = "absolute",
         fig_size: tuple[float, float] = (12, 4),
-        offset_lim: tuple[float, float] = None,
+        offset_lim: tuple[float, float] | None = None,
         offset_bin: float = 0.25,
-        vector_lim: tuple[float, float] = (0, 10),
+        vector_lim: tuple[float, float] | None = None,
         vector_bin: float = 0.25,
-        title: str = None,
+        title: str | None = None,
     ) -> mpl.Figure:
         """Generate a histogram plot of distribution of offset values in each dimension.
 
