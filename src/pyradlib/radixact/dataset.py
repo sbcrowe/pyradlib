@@ -193,7 +193,7 @@ class RadixactDataset:
         str
             Representation of the object.
         """
-        return f"RadixactDataset(num_files={len(self._files)!s})"
+        return f"RadixactDataset(num_files={len(self._files)})"
 
     # endregion
 
