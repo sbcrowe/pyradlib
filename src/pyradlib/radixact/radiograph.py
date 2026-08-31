@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Radiograph analysis module.
 
 This module provides functionality for processing of radiograph data from Synchrony treatments.
@@ -20,15 +19,15 @@ import numpy.typing as npt
 class RadixactRadiograph:
     # region Constructors
 
-    def __init__(self, image: npt.ArrayLike, uid: str = None) -> RadixactRadiograph:
+    def __init__(
+        self, image: npt.ArrayLike
+    ) -> RadixactRadiograph:
         """Initialises the radiograph image class.
 
         Parameters
         ----------
         image : npt.ArrayLike
             Numpy array containing pixel values.
-        uid : str, optional
-            Unique identifier associated with the data. Default is None.
 
         Returns
         -------
@@ -36,18 +35,17 @@ class RadixactRadiograph:
             The radiograph image, encapsulated in a helper class.
         """
         self._image = image
-        self.uid = uid
 
     @classmethod
-    def from_bin(cls, path: str | os.PathLike, uid: str = None) -> RadixactRadiograph:
+    def from_bin(
+        cls, path: str | os.PathLike
+    ) -> RadixactRadiograph:
         """Reads radiograph image from a binary file.
 
         Parameters
         ----------
         path : str | os.PathLike
             Path to the binary file.
-        uid : str, optional
-            Unique identifier associated with the data. Default is None.
 
         Returns
         -------
@@ -62,6 +60,6 @@ class RadixactRadiograph:
         2880x2880 element array).
         """
         data = np.fromfile(path, dtype=np.int16).reshape((960, 960))
-        return cls(data, uid)
+        return cls(data)
 
     # endregion
