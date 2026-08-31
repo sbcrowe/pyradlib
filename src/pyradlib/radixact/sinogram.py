@@ -32,7 +32,7 @@ from pyradlib.radixact.timing import RadixactTiming
 class RadixactSinogram:
     # region Constructors
 
-    def __init__(self, data: pl.DataFrame, uid: str = None):
+    def __init__(self, data: pl.DataFrame):
         """Initialises an object corresponding to a sinogram.
 
         Parameters
@@ -40,14 +40,11 @@ class RadixactSinogram:
         data : DataFrame
             DataFrame containing projections, and optionally, gantry angles,
             datetimes, leaf open times, and detector channel signal data.
-        uid : str, optional
-            Unique identifier associated with the data. Default is None.
         """
-        self._df = data
-        self._uid = uid
+        self._df: pl.DataFrame = data
 
     @classmethod
-    def from_bin(cls, path: str | os.PathLike, uid: str = None) -> RadixactSinogram:
+    def from_bin(cls, path: str | os.PathLike) -> RadixactSinogram:
         """Reads planned, telemetry, difference or detector sinogram from a .bin
         file exported from the Delivery Analysis software.
 
@@ -55,8 +52,6 @@ class RadixactSinogram:
         ----------
         path : str | os.PathLike
             Path to the .bin file.
-        uid : str, optional
-            Unique identifier associated with the data. Default is None.
 
         Returns
         -------
@@ -93,19 +88,16 @@ class RadixactSinogram:
                 "channel_values": data,
             }
         )
-        return cls(df, uid)
+        return cls(df)
 
     @classmethod
-    def from_dcm(cls, path: str | os.PathLike, uid: str = None) -> RadixactSinogram:
+    def from_dcm(cls, path: str | os.PathLike) -> RadixactSinogram:
         """Reads planned sinogram from a DICOM RTPLAN file.
 
         Parameters
         ----------
         path : str | os.PathLike
             Path to the .dcm file.
-        uid : str, optional
-            Unique identifier associated with the data. Default is None, in which case
-            a UID from the DICOM file will be used.
 
         Returns
         -------
@@ -129,17 +121,10 @@ class RadixactSinogram:
                     }
                 )
         df = pl.DataFrame(data)
-        if uid is None:
-            # TODO Extract a UID from DCM file.
-            dicom_uid = None
-            return cls(df, dicom_uid)
-        else:
-            return cls(df, uid)
+        return cls(df)
 
     @classmethod
-    def from_delivery_analysis_csv(
-        cls, path: str | os.PathLike, uid: str = None
-    ) -> RadixactSinogram:
+    def from_delivery_analysis_csv(cls, path: str | os.PathLike) -> RadixactSinogram:
         """Reads planned, telemetry, difference or detector sinogram from a .csv
         file exported from the Delivery Analysis software.
 
@@ -147,8 +132,6 @@ class RadixactSinogram:
         ----------
         path : str | os.PathLike
             Path to the .csv file.
-        uid : str, optional
-            Unique identifier associated with the data. Default is None.
 
         Returns
         -------
@@ -174,15 +157,13 @@ class RadixactSinogram:
         return cls(df)
 
     @classmethod
-    def from_det(cls, path: str | os.PathLike, uid: str = None) -> RadixactSinogram:
+    def from_det(cls, path: str | os.PathLike) -> RadixactSinogram:
         """Reads detector sinogram from a .det file.
 
         Parameters
         ----------
         path : str | os.PathLike
             Path to the .det file.
-        uid : str, optional
-            Unique identifier associated with the data. Default is None.
 
         Returns
         -------
@@ -208,18 +189,16 @@ class RadixactSinogram:
                 "channel_values": data,
             }
         )
-        return cls(df, uid)
+        return cls(df)
 
     @classmethod
-    def from_dplan(cls, path: str | os.PathLike, uid: str = None) -> RadixactSinogram:
+    def from_dplan(cls, path: str | os.PathLike) -> RadixactSinogram:
         """Reads planned or telemetry sinogram from a .dplan file.
 
         Parameters
         ----------
         path : str | os.PathLike
             Path to the .dplan file.
-        uid : str, optional
-            Unique identifier associated with the data. Default is None.
 
         Returns
         -------
@@ -274,18 +253,16 @@ class RadixactSinogram:
                 "channel_values": data,
             }
         )
-        return cls(df, uid)
+        return cls(df)
 
     @classmethod
-    def from_parquet(cls, path: str | os.PathLike, uid: str = None) -> RadixactSinogram:
+    def from_parquet(cls, path: str | os.PathLike) -> RadixactSinogram:
         """Reads sinogram from a parquet file.
 
         Parameters
         ----------
         path : str | os.PathLike
             Path to the parquet file.
-        uid : str, optional
-            Unique identifier associated with the data. Default is None.
 
         Returns
         -------
@@ -293,7 +270,7 @@ class RadixactSinogram:
             Two-dimensional numpy array encapsulated with helper functions.
         """
         df = pl.read_parquet(path)
-        return cls(df, uid)
+        return cls(df)
 
     # endregion
 
@@ -812,11 +789,11 @@ class RadixactSinogram:
         """
         if self._df.shape[1] <= 64:
             header_row = ["Projection"] + [
-                "Leaf %d LOT" % (i + 1) for i in range(self._df.shape[1])
+                f"Leaf {i + 1} LOT" for i in range(self._df.shape[1])
             ]
         else:
             header_row = ["Projection"] + [
-                "Channel %d count" % (i + 1) for i in range(self._df.shape[1])
+                f"Channel {i + 1} count" for i in range(self._df.shape[1])
             ]
         projection_column = np.arange(1, self._df.shape[0] + 1).reshape((-1, 1))
         np.savetxt(
