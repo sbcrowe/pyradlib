@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Plan analysis module.
 
 This module provides functionality for processing of general planning data from
@@ -228,9 +227,9 @@ class RadixactPlanDetails:
                 ]
             )
             for index, angle in enumerate(imaging_angles):
-                details[f"imaging_angle_{str(index + 1)}"] = angle
+                details[f"imaging_angle_{index + 1}"] = angle
             for index in range(len(imaging_angles), 6, 1):
-                details[f"imaging_angle_{str(index + 1)}"] = None
+                details[f"imaging_angle_{index + 1}"] = None
         # TODO Read other parameters, such as dose objectives and Synchrony imaging
         # angles.
         return cls(pl.DataFrame(details))
@@ -541,11 +540,11 @@ class RadixactPlanSettings:
                 self._df.select(
                     pl.col(imaging_angle_name)
                     .cast(pl.Float64)
-                    .alias(f"imaging_angle_{str(index + 1)}")
+                    .alias(f"imaging_angle_{index + 1}")
                     if imaging_angle_name in self._df.columns
                     else pl.lit(None)
                     .cast(pl.Float64)
-                    .alias(f"imaging_angle_{str(index + 1)}")
+                    .alias(f"imaging_angle_{index + 1}")
                     for index, imaging_angle_name in enumerate(
                         [
                             "RadiographAngle_0-Angle",
