@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Timing analysis module.
 
 This module provides functionality for processing of telemetry timing data from
@@ -21,16 +20,13 @@ import polars as pl
 
 class RadixactTiming:
     # region Constructors
-    def __init__(self, df: pl.DataFrame, uid: str = None) -> RadixactTiming:
+    def __init__(self, df: pl.DataFrame) -> RadixactTiming:
         """Initialises an object corresponding to telemetry timing.
 
         Parameters
         ----------
         df : DataFrame
             DataFrame containing telemetry timing data.
-        uid : str, optional
-            Unique identifier string, to allow association with telemetry fluence data.
-            Default is None.
 
         Returns
         -------
@@ -38,19 +34,15 @@ class RadixactTiming:
             DataFrame encapsulated with helper functions.
         """
         self._df = df
-        self._uid = uid
 
     @classmethod
-    def from_dat(cls, path: str | os.PathLike, uid: str = None) -> RadixactTiming:
+    def from_dat(cls, path: str | os.PathLike) -> RadixactTiming:
         """Reads telemetry timing from a .dat file.
 
         Parameters
         ----------
         path : str | os.PathLike
             Path to the .dat file.
-        uid : str, optional
-            Unique identifier string, to allow association with telemetry fluence data.
-            Default is None.
 
         Returns
         -------
@@ -113,7 +105,7 @@ class RadixactTiming:
         data = data.with_columns(
             pl.from_epoch("timestamp", time_unit="us").alias("datetime")
         )
-        return cls(data, uid)
+        return cls(data)
 
     # endregion
 
@@ -127,7 +119,7 @@ class RadixactTiming:
         str
             Representation of the object.
         """
-        return f"RadixactTiming(uid={self._uid}, start={self._df['datetime'][0]})"
+        return f"RadixactTiming(start={self._df['datetime'][0]})"
 
     # region Properties
 
