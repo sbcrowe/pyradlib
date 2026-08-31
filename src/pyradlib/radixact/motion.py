@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Motion analysis module.
 
 This module provides functionality for processing of motion data from Synchrony
@@ -32,7 +31,7 @@ logger = logging.getLogger(__name__)
 class RadixactSynchronyMotion:
     # region Constructors
 
-    def __init__(self, df: pl.DataFrame, uid: str = None) -> RadixactSynchronyMotion:
+    def __init__(self, df: pl.DataFrame) -> RadixactSynchronyMotion:
         """
         Parameters
         ----------
@@ -40,9 +39,6 @@ class RadixactSynchronyMotion:
             Dataframe containing relative timestamps of motion data (in sec),
             IEC-X, IEC-Y, and IEC-Z displacements (in mm), and optionally,
             rigid body values, potential diffs and measured deltas (in mm).
-        uid : str, optional
-            Unique identifier string, to allow association with other data. Default is
-            None.
 
         Returns
         -------
@@ -50,7 +46,6 @@ class RadixactSynchronyMotion:
             The Radixact Synchrony motion data encapsulated with helper functions.
         """
         self._df = df
-        self._uid = uid
 
     @classmethod
     def from_array_likes(
@@ -62,7 +57,6 @@ class RadixactSynchronyMotion:
         rigid_bodys: npt.ArrayLike = None,
         potential_diffs: npt.ArrayLike = None,
         measured_diffs: npt.ArrayLike = None,
-        uid: str = None,
     ) -> RadixactSynchronyMotion:
         """_summary_
 
@@ -82,9 +76,6 @@ class RadixactSynchronyMotion:
             Potential difference of uncertainty in model, in mm.
         measured_diffs : npt.ArrayLike, optional
             Measured difference between model and images, in mm.
-        uid : str, optional
-            Unique identifier string, to allow association with other data. Default is
-            None.
 
         Returns
         -------
@@ -121,7 +112,7 @@ class RadixactSynchronyMotion:
             df_dict["measured_diff"] = measured_diffs
         df = pl.DataFrame(df_dict)
         df = cls._calculate_additional_offsets(df)
-        return cls(df, uid)
+        return cls(df)
 
     @classmethod
     def from_motion_extractor_csv(
@@ -129,7 +120,6 @@ class RadixactSynchronyMotion:
         path_x: str | os.PathLike,
         path_y: str | os.PathLike,
         path_z: str | os.PathLike,
-        uid: str = None,
     ) -> RadixactSynchronyMotion:
         """Extracts motion data from csv file representing a patient
         treatment fraction fragment, taken from Motion Data Extractor tool.
@@ -142,9 +132,6 @@ class RadixactSynchronyMotion:
             Path to csv file containing IEC-Y or superior-inferior motion data.
         path_z : str | os.PathLike
             Path to csv file containing IEC-Z or anterior-posterior motion data.
-        uid : str, optional
-            Unique identifier string, to allow association with other data. Defualt is
-            None.
 
         Returns
         -------
@@ -156,22 +143,17 @@ class RadixactSynchronyMotion:
         y_displacements = np.loadtxt(path_y, delimiter=",", skiprows=1)[:, 1]
         z_displacements = np.loadtxt(path_z, delimiter=",", skiprows=1)[:, 1]
         return cls.from_array_likes(
-            times, x_displacements, y_displacements, z_displacements, uid=uid
+            times, x_displacements, y_displacements, z_displacements
         )
 
     @classmethod
-    def from_npz(
-        cls, path: str | os.PathLike, uid: str = None
-    ) -> RadixactSynchronyMotion:
+    def from_npz(cls, path: str | os.PathLike) -> RadixactSynchronyMotion:
         """Reads motion data stored in numpy npz file.
 
         Parameters
         ----------
         path : str | os.PathLike
             Path to the npz file containing motion data.
-        uid : str, optional
-            Unique identifier string, to allow association with other data. Default is
-            None.
 
         Returns
         -------
@@ -182,21 +164,16 @@ class RadixactSynchronyMotion:
             df = pl.DataFrame(dict(npz_data))
             df = cls._calculate_additional_offsets(df)
             df = cls._calculate_additional_times(df)
-            return cls(df, uid)
+            return cls(df)
 
     @classmethod
-    def from_parquet(
-        cls, path: str | os.PathLike, uid: str = None
-    ) -> RadixactSynchronyMotion:
+    def from_parquet(cls, path: str | os.PathLike) -> RadixactSynchronyMotion:
         """Reads motion data stored in parquet file.
 
         Parameters
         ----------
         path : str | os.PathLike
             Path to parquet file containing motion data.
-        uid : str, optional
-            Unique identifier string, to allow association with other data. Default is
-            None.
 
         Returns
         -------
@@ -204,7 +181,7 @@ class RadixactSynchronyMotion:
             The Radixact Synchrony motion data encapsulated with helper functions.
         """
         df = pl.read_parquet(path)
-        return cls(df, uid)
+        return cls(df)
 
     @classmethod
     def from_patient_motions(
@@ -259,9 +236,7 @@ class RadixactSynchronyMotion:
         return RadixactSynchronyMotion(result)
 
     @classmethod
-    def from_xml(
-        cls, path: str | os.PathLike, uid: str = None
-    ) -> RadixactSynchronyMotion:
+    def from_xml(cls, path: str | os.PathLike) -> RadixactSynchronyMotion:
         """Extracts motion data from *motionData.xml file representing a patient
         treatment fraction fragment, taken from a Delivery Analysis cache or Patient
         Data Extractor archive.
@@ -270,9 +245,6 @@ class RadixactSynchronyMotion:
         ----------
         path : str | os.PathLike
             Path to XML file containing motion data.
-        uid : str, optional
-            Unique identifier string, to allow association with other data. Default is
-            None.
 
         Returns
         -------
@@ -330,7 +302,7 @@ class RadixactSynchronyMotion:
         df_cleaned = df.select(
             [pl.col(col) for col in df.columns if not df[col].is_null().all()]
         )
-        return cls(df_cleaned, uid)
+        return cls(df_cleaned)
 
     # endregion
 
@@ -394,7 +366,13 @@ class RadixactSynchronyMotion:
         str
             Representation of the object.
         """
-        return f"RadixactSynchronyMotion(uid={self._uid})"
+        if "timestamp" in self._df:
+            return (
+                f"RadixactSynchronyMotion(len={len(self._df)}, "
+                f"timestamp={self._df['timestamp'][0]})"
+            )
+        else:
+            return f"RadixactSynchronyMotion(len={len(self._df)})"
 
     # endregion
 
@@ -496,11 +474,11 @@ class RadixactSynchronyMotion:
         self,
         mode: str = "absolute",
         fig_size: tuple[float, float] = (12, 4),
-        offset_lim: tuple[float, float] = None,
+        offset_lim: tuple[float, float] | None = None,
         offset_bin: float = 0.25,
-        vector_lim: tuple[float, float] = (0, 10),
+        vector_lim: tuple[float, float] | None = None,
         vector_bin: float = 0.25,
-        title: str = None,
+        title: str | None = None,
     ) -> mpl.Figure:
         """Generate a histogram plot of distribution of offset values in each dimension.
 
@@ -558,7 +536,7 @@ class RadixactSynchronyMotion:
             max_offset = offset_lim[1]
         for index, axis in enumerate(["x", "y", "z"]):
             # TODO Don't assume that max_offset - min_offset is divisible by offset_bin
-            y, x, _ = axs[index].hist(
+            _y, _x, _ = axs[index].hist(
                 np.clip(offsets[:, index], min_offset, max_offset),
                 list(
                     np.arange(
