@@ -72,7 +72,7 @@ class RadixactRadiograph:
         RadixactRadiograph
             The radiograph image, encapsulated in a helper class.
         """
-        cls.from_npz(path)
+        return cls.from_npz(path)
 
     @classmethod
     def from_npz(cls, path: str | os.PathLake) -> RadixactRadiograph:
