@@ -917,6 +917,7 @@ class RadixactSynchronyMotion:
             df_results.append(
                 df.select(
                     [
+                        pl.col(col).first().alias("starting_" + col),
                         pl.col(col).mean().alias("mean_" + col),
                         pl.col(col).std().alias("standard_deviation_" + col),
                         pl.col(col).median().alias("median_" + col),
