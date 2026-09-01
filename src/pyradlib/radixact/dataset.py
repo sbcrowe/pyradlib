@@ -659,6 +659,47 @@ class RadixactDataset:
 
     # region Public methods
 
+    def plot_motion_histogram(
+        self,
+        mode: str = "absolute",
+        fig_size: tuple[float, float] = (12, 4),
+        offset_lim: tuple[float, float] | None = None,
+        offset_bin: float = 0.25,
+        vector_lim: tuple[float, float] | None = None,
+        vector_bin: float = 0.25,
+        title: str | None = None,
+    ) -> mpl.Figure:
+        """Generate a histogram plot of distribution of offset values in each dimension.
+
+        Parameters
+        ----------
+        mode : str, optional
+            Indicates whether to use absolute or relative offset. Default is "absolute".
+        fig_size : tuple[float, float], optional
+            Size of the figure. Default is (12, 4) inches.
+        offset_lim : tuple[float, float], optional
+            Minimum and maximum bin boundaries for offset. Default is None, in which
+            case the limits will be calculated with floor(min) and ceiling(max),
+            respectively.
+        offset_bin : float, optional
+            Bin width. Default is 0.25 mm.
+        vector_lim : tuple[float, float], optional
+            Minimum and maximum bin boundaries for vector. Default is None, in which
+            case the limits will be 0 and ceiling(max).
+        vector_bin : float, optional
+            Bin width, Default is 0.25 mm.
+        title : str, optional
+            Title for figure. Default is None.
+
+        Returns
+        -------
+        mpl.Figure
+            Histogram of target offset values in each dimension.
+        """
+        return self.motion.plot_motion_histogram(
+            mode, fig_size, offset_lim, offset_bin, vector_lim, vector_bin, title
+        )
+
     def plot_session_motions(
         self,
         parameters: list[str] | None = None,
