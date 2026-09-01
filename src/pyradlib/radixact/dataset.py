@@ -42,6 +42,13 @@ logger = logging.getLogger(__name__)
 class RadixactDataset:
     # region Class variables
 
+    _COMPRESSED_EXTENSIONS: ClassVar[dict[str, str]] = {
+        "Detector Sinogram": "parquet",
+        "Motion Data": "npz",
+        "Plan Sinogram": "parquet",
+        "Telemetry Sinogram": "parquet",
+    }
+
     _DEFAULT_EXTENSIONS: ClassVar[dict[str, str]] = {
         "Detector Sinogram": "det",
         "Dose Distribution": "dcm",
@@ -772,25 +779,67 @@ class RadixactDataset:
             offset_type, threshold_step, figsize
         )
 
-    def save_compressed(self, path: str | os.PathLike) -> None:
+    def save_compressed(
+        self, path: str | os.PathLike, types: list[str] | None, overwrite: bool = True
+    ) -> None:
         """Save compressed versions of dataset files in a directory.
 
         Parameters
         ----------
         path : str | os.PathLike
             Path to which the compressed files should be saved.
+        types : list[str] | None, optional
+            List of file types to save copies of. Default is None, in which case
+            Detector Sinogram, Motion Data, Plan, Plan Details, Plan Information,
+            Plan Sinogram, Record, Telemetry Sinogram and Telemetry Timing files
+            will be copied.
+        overwrite : bool, optional
+            Flag to silently overwrite existing files. Default is True. If False,
+            file copy will be silently skipped.
         """
-        # TODO add other files
-        # TODO Consider compression or saving of partial plan data instead of DCM.
-        for index, plan in enumerate(self.plans):
-            pydicom.dcmwrite(os.path.join(path, f"rtplan_{index + 1:03d}"), plan._ds)
-        for index, motion in enumerate(self.motions):
-            motion.to_npz(os.path.join(path, f"motiondata_{index + 1:03d}"))
+        if types is None:
+            types = [
+                "Detector Sinogram",
+                "Motion Data",
+                # "Plan",
+                # "Plan Details",
+                # "Plan Information",
+                # "Plan Settings",
+                "Plan Sinogram",
+                # "Record",
+                "Telemetry Sinogram",
+                # "Telemetry Timing",
+            ]
+        properties = {
+            "Detector Sinogram": self.detector_sinograms,
+            "Motion Data": self.motions,
+            # "Plan": self.plans,
+            # "Plan Details": self.plan_details,
+            # "Plan Information": self.plan_informations,
+            # "Plan Settings": self.plan_settings,
+            "Plan Sinogram": self.plan_sinograms,
+            # "Record": self.radiation_records,
+            "Telemetry Sinogram": self.telemetry_sinograms,
+            # "Telemetry Timing": self.telemetry_timings,
+        }
+        for type in types:
+            for index, data in enumerate(properties[type]):
+                dst_path = os.path.join(
+                    path,
+                    f"{self._DEFAULT_PREFIXES[type]}_{index + 1:03d}"
+                    + f".{self._COMPRESSED_EXTENSIONS_EXTENSIONS[type]}",
+                )
+                if os.path.exists(dst_path):
+                    if overwrite:
+                        data.to_compressed(dst_path)
+                else:
+                    data.to_compressed(dst_path)
 
     def save_copy(
         self,
         path: str | os.PathLike,
         types: list[str] | None = None,
+        overwrite: bool = True,
     ) -> None:
         """Save copies of dataset files in a directory.
 
@@ -803,6 +852,9 @@ class RadixactDataset:
             Detector Sinogram, Motion Data, Plan, Plan Details, Plan Information,
             Plan Sinogram, Record, Telemetry Sinogram and Telemetry Timing files
             will be copied.
+        overwrite : bool, optional
+            Flag to silently overwrite existing files. Default is True. If False,
+            file copy will be silently skipped.
         """
         if types is None:
             types = [
@@ -819,14 +871,16 @@ class RadixactDataset:
             ]
         for type in types:
             for index, src_path in enumerate(self._get_filtered_series_list(type)):
-                shutil.copy(
-                    src_path,
-                    os.path.join(
-                        path,
-                        f"{self._DEFAULT_PREFIXES[type]}_{index + 1:03d}"
-                        + f".{self._DEFAULT_EXTENSIONS[type]}",
-                    ),
+                dst_path = os.path.join(
+                    path,
+                    f"{self._DEFAULT_PREFIXES[type]}_{index + 1:03d}"
+                    + f".{self._DEFAULT_EXTENSIONS[type]}",
                 )
+                if os.path.exists(dst_path):
+                    if overwrite:
+                        shutil.copy(src_path, dst_path)
+                else:
+                    shutil.copy(src_path, dst_path)
 
     # endregion
 
