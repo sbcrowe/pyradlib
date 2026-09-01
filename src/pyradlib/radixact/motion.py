@@ -115,6 +115,22 @@ class RadixactSynchronyMotion:
         return cls(df)
 
     @classmethod
+    def from_compressed(cls, path: str | os.PathLike) -> RadixactSynchronyMotion:
+        """Reads motion data stored in numpy npz file.
+
+        Parameters
+        ----------
+        path : str | os.PathLike
+            Path to the npz file containing motion data.
+
+        Returns
+        -------
+        RadixactSynchronyMotion
+            The Radixact Synchrony motion data encapsulated with helper functions.
+        """
+        return cls.from_npz(path)
+
+    @classmethod
     def from_motion_extractor_csv(
         cls,
         path_x: str | os.PathLike,
@@ -725,6 +741,16 @@ class RadixactSynchronyMotion:
         """
         metrics = self.metrics.filter(pl.col("session_index").is_not_null())
         return self._fraction_less_than_threshold(metrics, offset_type, threshold_step)
+
+    def to_compressed(self, path: str | os.PathLike) -> None:
+        """Writes motion data to compressed npz file.
+
+        Parameters
+        ----------
+        path : str | os.PathLike
+            Path for npz file to be written.
+        """
+        self.to_npz(path)
 
     def to_csv(self, path: str | os.PathLike) -> None:
         """Writes motion data to CSV file.
