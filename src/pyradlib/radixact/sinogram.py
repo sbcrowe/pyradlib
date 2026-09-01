@@ -91,6 +91,22 @@ class RadixactSinogram:
         return cls(df)
 
     @classmethod
+    def from_compressed(cls, path: str | os.PathLike) -> RadixactSinogram:
+        """Reads sinogram from a parquet file.
+
+        Parameters
+        ----------
+        path : str | os.PathLike
+            Path to the parquet file.
+
+        Returns
+        -------
+        RadixactSinogram
+            Two-dimensional numpy array encapsulated with helper functions.
+        """
+        return cls.from_parquet(path)
+
+    @classmethod
     def from_dcm(cls, path: str | os.PathLike) -> RadixactSinogram:
         """Reads planned sinogram from a DICOM RTPLAN file.
 
@@ -778,6 +794,16 @@ class RadixactSinogram:
             self._df.get_column("time").to_numpy()[1]
             - self._df.get_column("time").to_numpy()[0]
         ) * 1000
+
+    def to_compressed(self, path: str | os.PathLike):
+        """Writes sinogram dataframe to parquet file.
+
+        Parameters
+        ----------
+        path : str | os.PathLike
+            Path of the parquet file to be written.
+        """
+        self.to_parquet(path)
 
     def to_csv(self, path: str | os.PathLike):
         """Writes sinogram leaf open times or channel signal data to CSV file.
