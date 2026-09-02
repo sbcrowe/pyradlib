@@ -17,6 +17,7 @@ import logging
 import os
 import xml.etree.ElementTree as et
 from functools import cached_property
+from typing import Literal
 
 import matplotlib as mpl
 import matplotlib.pyplot as plt
@@ -488,7 +489,7 @@ class RadixactSynchronyMotion:
 
     def plot_motion_histogram(
         self,
-        mode: str = "absolute",
+        mode: Literal["absolute", "delta", "relative", "starting"] = "absolute",
         fig_size: tuple[float, float] = (12, 4),
         offset_lim: tuple[float, float] | None = None,
         offset_bin: float = 0.25,
@@ -500,8 +501,8 @@ class RadixactSynchronyMotion:
 
         Parameters
         ----------
-        mode : str, optional
-            Indicates whether to use absolute or relative offset. Default is "absolute".
+        mode : {'absolute', 'delta', 'relative', 'starting'}, optional
+            Indicates whether to use absolute, relative or starting offset. Default is 'absolute'.
         fig_size : tuple[float, float], optional
             Size of the figure. Default is (12, 4) inches.
         offset_lim : tuple[float, float], optional
@@ -530,13 +531,24 @@ class RadixactSynchronyMotion:
                 "target_offset_z",
                 "target_offset_vector",
             ).to_numpy()
-        if mode == "delta" or mode == "relative":
+        elif mode == "delta" or mode == "relative":
             offsets = self._df.select(
                 "delta_target_offset_x",
                 "delta_target_offset_y",
                 "delta_target_offset_z",
                 "delta_target_offset_vector",
             ).to_numpy()
+        elif mode == "starting":
+            offsets = (
+                self._df.filter(pl.col("delta_time") == 0)
+                .select(
+                    "target_offset_x",
+                    "target_offset_y",
+                    "target_offset_z",
+                    "target_offset_vector",
+                )
+                .to_numpy()
+            )
         fig, axs = plt.subplots(
             ncols=4,
             nrows=1,
@@ -593,7 +605,7 @@ class RadixactSynchronyMotion:
             )
             axs[index].set_xlim((min_offset, max_offset))
             axs[index].ticklabel_format(scilimits=[-3, 3])
-        if mode == "absolute":
+        if mode == "absolute" or mode == "starting":
             axs[0].set_title("IEC-X (left-right)")
             axs[1].set_title("IEC-Y (sup-inf)")
             axs[2].set_title("IEC-Z (ant-post)")
@@ -641,6 +653,10 @@ class RadixactSynchronyMotion:
             fig.supxlabel(
                 "Target offset relative to position at start of tracking (mm)"
             )
+        elif mode == "starting":
+            fig.supxlabel(
+                "Target offset relative to position at registration, at start of tracking (mm)"
+            )
         if title is not None:
             fig.suptitle(title)
         return fig
@@ -677,7 +693,7 @@ class RadixactSynchronyMotion:
         """
         df = self.session_fraction_less_than_threshold(offset_type, threshold_step)
         return self._plot_fraction_less_than_threshold(
-            df, "patients", offset_type, figsize
+            df, "patient", offset_type, figsize
         )
 
     def plot_session_fraction_less_than_threshold(
@@ -710,7 +726,7 @@ class RadixactSynchronyMotion:
         """
         df = self.session_fraction_less_than_threshold(offset_type, threshold_step)
         return self._plot_fraction_less_than_threshold(
-            df, "sessions", offset_type, figsize
+            df, "session", offset_type, figsize
         )
 
     def session_fraction_less_than_threshold(
@@ -1056,7 +1072,7 @@ class RadixactSynchronyMotion:
     @staticmethod
     def _plot_fraction_less_than_threshold(
         fraction_less_than_threshold_df: pl.DataFrame,
-        grouping: str,
+        grouping: Literal["patient", "session"],
         offset_type: str,
         figsize=(12, 4),
     ) -> mpl.Figure:
@@ -1097,22 +1113,22 @@ class RadixactSynchronyMotion:
         ax.plot(
             fraction_less_than_threshold_df["thresholds"],
             fraction_less_than_threshold_df["fraction_r80"],
-            label="for 80% tracking time",
+            label=f"for 80% of {grouping} tracking time",
         )
         ax.plot(
             fraction_less_than_threshold_df["thresholds"],
             fraction_less_than_threshold_df["fraction_r90"],
-            label="for 90% tracking time",
+            label=f"for 90% of {grouping} tracking time",
         )
         ax.plot(
             fraction_less_than_threshold_df["thresholds"],
             fraction_less_than_threshold_df["fraction_r95"],
-            label="for 95% tracking time",
+            label=f"for 95% of {grouping} tracking time",
         )
         ax.plot(
             fraction_less_than_threshold_df["thresholds"],
             fraction_less_than_threshold_df["fraction_r100"],
-            label="for 100% tracking time",
+            label=f"for 100% of {grouping} tracking time",
         )
         ax.set_xlim(
             fraction_less_than_threshold_df["thresholds"][0],
@@ -1123,7 +1139,7 @@ class RadixactSynchronyMotion:
         y_label = offset_type_label.replace("Relative", "relative").replace(
             "Vector", "vector"
         )
-        ax.set_ylabel(f"Percentage of {grouping} with \n{y_label} less than threshold")
+        ax.set_ylabel(f"Percentage of {grouping}s with \n{y_label} less than threshold")
         ax.legend()
         return fig
 
