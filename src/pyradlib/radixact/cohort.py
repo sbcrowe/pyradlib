@@ -14,6 +14,7 @@ __license__ = "GPL3"
 import logging
 import os
 from functools import cached_property
+from typing import Literal
 
 import matplotlib as mpl
 import matplotlib.pyplot as plt
@@ -298,7 +299,7 @@ class RadixactDatasetCohort:
 
     def plot_motion_histogram(
         self,
-        mode: str = "absolute",
+        mode: Literal["absolute", "delta", "relative", "starting"] = "absolute",
         fig_size: tuple[float, float] = (12, 4),
         offset_lim: tuple[float, float] | None = None,
         offset_bin: float = 0.25,
