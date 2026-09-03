@@ -33,6 +33,7 @@ from pyradlib.radixact.plan import (
     RadixactPlanInformation,
     RadixactPlanSettings,
 )
+from pyradlib.radixact.record import RadixactRecord
 from pyradlib.radixact.sinogram import RadixactSinogram
 from pyradlib.radixact.timing import RadixactTiming
 
@@ -515,7 +516,7 @@ class RadixactDataset:
             return plan_sinograms
 
     @cached_property
-    def radiation_records(self) -> list[pydicom.Dataset]:
+    def records(self) -> list[pydicom.Dataset]:
         """Returns list containing fractional delivery radiation records.
 
         Returns
@@ -528,7 +529,7 @@ class RadixactDataset:
         # which includes fraction_number as instance[:-2] and session as instance[-2:]
         radiation_records = []
         radiation_record_files = self._get_filtered_series_list(
-            "Radiation Record", series="curr_path"
+            "Record", series="curr_path"
         )
         if len(radiation_record_files) == 0:
             logger.debug("Dataset contains no radiation record files")
@@ -536,9 +537,25 @@ class RadixactDataset:
         else:
             for radiation_record_file in radiation_record_files:
                 logger.debug(f"Loading {radiation_record_file}")
-                radiation_records.append(pydicom.dcmread(radiation_record_file))
+                radiation_records.append(RadixactRecord.from_dcm(radiation_record_file))
             logger.info(f"Loaded {len(radiation_records)} radiation record files")
             return radiation_records
+
+    @cached_property
+    def records_summary(self) -> pl.DataFrame:
+        """Produce summary of treatment record parameters.
+
+        Returns
+        -------
+        pl.DataFrame
+            DataFrame containing treatment record parameters.
+        """
+        return pl.concat(
+            [
+                record.summary.with_columns(session_index=pl.lit(key))
+                for key, record in enumerate(self.records)
+            ]
+        )
 
     @cached_property
     def structure_sets(self) -> list[pydicom.Dataset]:
