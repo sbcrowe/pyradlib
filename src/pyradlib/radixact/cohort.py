@@ -297,6 +297,50 @@ class RadixactDatasetCohort:
         ax.set_theta_direction(-1)
         return fig
 
+    def plot_motion_boxplot_sns(
+        self,
+        parameters: list[str] | None = None,
+        aspect: int = 1,
+        col_wrap: int = 4,
+        sharey: bool = False,
+    ) -> mpl.Figure:
+        """Plot boxplot of motion and tracking parameters using Seaborn.
+
+        Parameters
+        ----------
+        parameters : list[str], optional
+            The Synchrony paramters to include in the figure. Possible options include:
+            "target_offset_x", "target_offset_y", "target_offset_z"
+                Target offset in IEC-X, IEC-Y and/or IEC-Z dimensions.
+            "target_offset_vector"
+                Target offset in 3D space.
+            "delta_target_offset_x", "delta_target_offset_y", "delta_target_offset_z"
+                Target offset relative to starting position in IEC-X, IEC-Y and/or
+                IEC-Z dimensions.
+            "delta_target_offset_vector"
+                Target offset in 3D space relative to starting position.
+            "potential_diff"
+                Potential difference or uncertainty in target position calculcation.
+            "measured_diff"
+                Measured delta or difference between observed and calculated offset.
+            "rigid_body"
+                Rigid body value describing deformation of fiducial distribution.
+            Default is None, in which case target_offset_x, target_offset_y,
+            target_offset_z, and target_offset_vector are used.
+        aspect : int, optional
+            Aspect ratio of each facet. Higher aspect ratios may require change to col_wrap. Default is 1.
+        col_wrap : int, optional
+            Number of column facets within a row. Default is 4.
+        sharey : bool, optional
+            Flag for whether facets should share y axes. Default is False.
+
+        Returns
+        -------
+        mpl.Figure
+            Boxplot of values in each dimension.
+        """
+        return self.motion.plot_motion_boxplot_sns(parameters, aspect, col_wrap, sharey)
+
     def plot_motion_histogram(
         self,
         mode: Literal["absolute", "delta", "relative", "starting"] = "absolute",
@@ -336,6 +380,56 @@ class RadixactDatasetCohort:
         """
         return self.motion.plot_motion_histogram(
             mode, fig_size, offset_lim, offset_bin, vector_lim, vector_bin, title
+        )
+
+    def plot_motion_histogram_sns(
+        self,
+        parameters: list[str] | None = None,
+        binwidth: float = 0.25,
+        col_wrap: int = 4,
+        sharex: bool = False,
+        sharey: bool = True,
+    ) -> mpl.Figure:
+        """Generate a histogram plot of distribution of offset values in each dimension,
+        using the Seaborn module.
+
+        Parameters
+        ----------
+        parameters : list[str], optional
+            The Synchrony paramters to include in the figure. Possible options include:
+            "target_offset_x", "target_offset_y", "target_offset_z"
+                Target offset in IEC-X, IEC-Y and/or IEC-Z dimensions.
+            "target_offset_vector"
+                Target offset in 3D space.
+            "delta_target_offset_x", "delta_target_offset_y", "delta_target_offset_z"
+                Target offset relative to starting position in IEC-X, IEC-Y and/or
+                IEC-Z dimensions.
+            "delta_target_offset_vector"
+                Target offset in 3D space relative to starting position.
+            "potential_diff"
+                Potential difference or uncertainty in target position calculcation.
+            "measured_diff"
+                Measured delta or difference between observed and calculated offset.
+            "rigid_body"
+                Rigid body value describing deformation of fiducial distribution.
+            Default is None, in which case target_offset_x, target_offset_y,
+            target_offset_z, and target_offset_vector are used.
+        binwidth: float, optional.
+            Width of bin, in mm. Default is 0.25 (mm).
+        col_wrap : int, optional
+            Number of column facets within a row. Default is 4.
+        sharex : bool, optional
+            Flag for whether facets should share x axes. Default is False.
+        sharey : bool, optional
+            Flag for whether facets should share y axes. Default is True.
+
+        Returns
+        -------
+        mpl.Figure
+            Histogram of target offset values in each dimension.
+        """
+        return self.motion.plot_motion_histogram_sns(
+            parameters, binwidth, col_wrap, sharex, sharey
         )
 
     def plot_patient_motions_fraction_less_than_threshold(

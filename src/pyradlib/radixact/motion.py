@@ -25,6 +25,7 @@ import matplotlib.ticker as mtick
 import numpy as np
 import numpy.typing as npt
 import polars as pl
+import seaborn as sns
 
 logger = logging.getLogger(__name__)
 
@@ -487,6 +488,104 @@ class RadixactSynchronyMotion:
         )
         return self._fraction_less_than_threshold(metrics, offset_type, threshold_step)
 
+    def plot_motion_boxplot_sns(
+        self,
+        parameters: list[str] | None = None,
+        aspect: int = 1,
+        col_wrap: int = 4,
+        sharey: bool = False,
+    ) -> mpl.Figure:
+        """_summary_
+
+        Parameters
+        ----------
+        parameters : list[str], optional
+            The Synchrony paramters to include in the figure. Possible options include:
+            "target_offset_x", "target_offset_y", "target_offset_z"
+                Target offset in IEC-X, IEC-Y and/or IEC-Z dimensions.
+            "target_offset_vector"
+                Target offset in 3D space.
+            "delta_target_offset_x", "delta_target_offset_y", "delta_target_offset_z"
+                Target offset relative to starting position in IEC-X, IEC-Y and/or
+                IEC-Z dimensions.
+            "delta_target_offset_vector"
+                Target offset in 3D space relative to starting position.
+            "potential_diff"
+                Potential difference or uncertainty in target position calculcation.
+            "measured_diff"
+                Measured delta or difference between observed and calculated offset.
+            "rigid_body"
+                Rigid body value describing deformation of fiducial distribution.
+            Default is None, in which case target_offset_x, target_offset_y,
+            target_offset_z, and target_offset_vector are used.
+        aspect : int, optional
+            Aspect ratio of each facet. Higher aspect ratios may require change to col_wrap. Default is 1.
+        col_wrap : int, optional
+            Number of column facets within a row. Default is 4.
+        sharey : bool, optional
+            Flag for whether facets should share y axes. Default is False.
+
+        Returns
+        -------
+        mpl.Figure
+            Boxplot of values in each dimension.
+        """
+        if "patient_index" in self._df:
+            category_series = "patient_index"
+            category_series_alias = "Patient"
+        elif "session_index" in self._df:
+            category_series = "session_index"
+            category_series_alias = "Session"
+        else:
+            # TODO Add exception or something here ...
+            return None
+        if parameters is None:
+            parameters = [
+                "target_offset_x",
+                "target_offset_y",
+                "target_offset_z",
+                "target_offset_vector",
+            ]
+        mapping = {
+            "target_offset_x": "IEC-X target offset",
+            "target_offset_y": "IEC-Y target offset",
+            "target_offset_z": "IEC-Z target offset",
+            "target_offset_vector": "Vector target offset",
+            "delta_target_offset_x": "ΔIEC-X target offset",
+            "delta_target_offset_y": "ΔIEC-Y target offset",
+            "delta_target_offset_z": "ΔIEC-Z target offset",
+            "delta_target_offset_vector": "ΔVector target offset",
+            "rigid_body": "Rigid body difference",
+            "potential_diff": "Potential difference",
+            "measured_diff": "Measured difference",
+        }
+        select = [
+            pl.col(col) for col in [category_series] + parameters if col in self._df
+        ]
+        unpivot_df = (
+            self._df.select(select)
+            .unpivot(index=[category_series])
+            .select(
+                [
+                    (pl.col(category_series) + 1).alias(category_series_alias),
+                    pl.col("variable").replace(mapping).alias("Parameter"),
+                    pl.col("value").alias("Distance (mm)"),
+                ]
+            )
+        )
+        ax = sns.catplot(
+            unpivot_df,
+            col="Parameter",
+            y="Distance (mm)",
+            x=category_series_alias,
+            kind="box",
+            col_wrap=col_wrap,
+            sharey=sharey,
+            aspect=aspect,
+        )
+        ax.set_titles(template="{col_name}")
+        return ax.figure
+
     def plot_motion_histogram(
         self,
         mode: Literal["absolute", "delta", "relative", "starting"] = "absolute",
@@ -660,6 +759,96 @@ class RadixactSynchronyMotion:
         if title is not None:
             fig.suptitle(title)
         return fig
+
+    def plot_motion_histogram_sns(
+        self,
+        parameters: list[str] | None = None,
+        binwidth: float = 0.25,
+        col_wrap: int = 4,
+        sharex: bool = False,
+        sharey: bool = True,
+    ) -> mpl.Figure:
+        """Generate a histogram plot of distribution of offset values in each dimension,
+        using the Seaborn module.
+
+        Parameters
+        ----------
+        parameters : list[str], optional
+            The Synchrony paramters to include in the figure. Possible options include:
+            "target_offset_x", "target_offset_y", "target_offset_z"
+                Target offset in IEC-X, IEC-Y and/or IEC-Z dimensions.
+            "target_offset_vector"
+                Target offset in 3D space.
+            "delta_target_offset_x", "delta_target_offset_y", "delta_target_offset_z"
+                Target offset relative to starting position in IEC-X, IEC-Y and/or
+                IEC-Z dimensions.
+            "delta_target_offset_vector"
+                Target offset in 3D space relative to starting position.
+            "potential_diff"
+                Potential difference or uncertainty in target position calculcation.
+            "measured_diff"
+                Measured delta or difference between observed and calculated offset.
+            "rigid_body"
+                Rigid body value describing deformation of fiducial distribution.
+            Default is None, in which case target_offset_x, target_offset_y,
+            target_offset_z, and target_offset_vector are used.
+        binwidth: float, optional.
+            Width of bin, in mm. Default is 0.25 (mm).
+        col_wrap : int, optional
+            Number of column facets within a row. Default is 4.
+        sharex : bool, optional
+            Flag for whether facets should share x axes. Default is False.
+        sharey : bool, optional
+            Flag for whether facets should share y axes. Default is True.
+
+        Returns
+        -------
+        mpl.Figure
+            Histogram of target offset values in each dimension.
+        """
+        if parameters is None:
+            parameters = [
+                "target_offset_x",
+                "target_offset_y",
+                "target_offset_z",
+                "target_offset_vector",
+            ]
+        mapping = {
+            "target_offset_x": "IEC-X target offset",
+            "target_offset_y": "IEC-Y target offset",
+            "target_offset_z": "IEC-Z target offset",
+            "target_offset_vector": "Vector target offset",
+            "delta_target_offset_x": "ΔIEC-X target offset",
+            "delta_target_offset_y": "ΔIEC-Y target offset",
+            "delta_target_offset_z": "ΔIEC-Z target offset",
+            "delta_target_offset_vector": "ΔVector target offset",
+            "rigid_body": "Rigid body difference",
+            "potential_diff": "Potential difference",
+            "measured_diff": "Measured difference",
+        }
+        select = [
+            pl.col(col)
+            for col in ["session_index", "delta_time"] + parameters
+            if col in self._df
+        ]
+        unpivot_df = (
+            self._df.select(select)
+            .unpivot(index=["session_index", "delta_time"])
+            .select(
+                [
+                    (pl.col("session_index") + 1).alias("Session"),
+                    pl.col("variable").replace(mapping).alias("Parameter"),
+                    pl.col("value").alias("Distance (mm)"),
+                    pl.col("delta_time").alias("Time (s)"),
+                ]
+            )
+        )
+        ax = sns.FacetGrid(
+            unpivot_df, col="Parameter", col_wrap=col_wrap, sharex=sharex, sharey=sharey
+        )
+        ax.map(sns.histplot, "Distance (mm)", binwidth=binwidth)
+        ax.set_titles(template="{col_name}")
+        return ax.figure
 
     def plot_patient_fraction_less_than_threshold(
         self,
@@ -1082,8 +1271,8 @@ class RadixactSynchronyMotion:
         ----------
         fraction_less_than_threshold_df : pl.DataFrame
             DataFrame containing offset percentile fraction less than threshold data.
-        grouping : str, optional
-            Description of grouping used for dataframe. E.g., "patients" or "session".
+        grouping : {'patient', 'session'}
+            Description of grouping used for dataframe.
         offset_type : str, optional
             The motion metric percentiles to evaluate against thresholds.
         figsize : tuple, optional
