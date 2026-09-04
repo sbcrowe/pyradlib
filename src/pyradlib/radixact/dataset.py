@@ -554,7 +554,8 @@ class RadixactDataset:
             [
                 record.summary.with_columns(session_index=pl.lit(key))
                 for key, record in enumerate(self.records)
-            ]
+            ],
+            how="vertical_relaxed",
         )
 
     @cached_property
@@ -675,6 +676,45 @@ class RadixactDataset:
     # endregion
 
     # region Public methods
+
+    def plot_correction_histogram(
+        self,
+        parameters: list[str] | None = None,
+        binwidth: float = 0.25,
+        col_wrap: int = 4,
+        sharex: bool = False,
+        sharey: bool = True,
+    ) -> mpl.Figure:
+        """Generate a histogram plot of treatment couch and gantry corrections after
+        daily imaging and registration.
+
+        Parameters
+        ----------
+        parameters : list[str], optional
+            The couch adjustments to include in the figure. Possible options include:
+            "correction_x", "correction_y", "correction_z"
+                Couch adjustment in the IEC-X, IEC-Y and/or IEC-Z dimensions.
+            "correction_roll"
+                Gantry angle adjustment.
+            Default is None, in which case correction_x, correction_y, correction_z,
+            and correction_roll are used.
+        binwidth: float, optional.
+            Width of bin, in mm or degrees. Default is 0.25 (mm or degrees).
+        col_wrap : int, optional
+            Number of column facets within a row. Default is 4.
+        sharex : bool, optional
+            Flag for whether facets should share x axes. Default is False.
+        sharey : bool, optional
+            Flag for whether facets should share y axes. Default is True.
+
+        Returns
+        -------
+        mpl.Figure
+            Histogram of target offset values in each dimension.
+        """
+        return RadixactRecord.plot_correction_histogram(
+            self.records_summary, parameters, binwidth, col_wrap, sharex, sharey
+        )
 
     def plot_motion_boxplot_sns(
         self,

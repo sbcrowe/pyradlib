@@ -23,6 +23,7 @@ import polars as pl
 
 from pyradlib.radixact.dataset import RadixactDataset
 from pyradlib.radixact.motion import RadixactSynchronyMotion
+from pyradlib.radixact.record import RadixactRecord
 
 logger = logging.getLogger(__name__)
 
@@ -215,6 +216,28 @@ class RadixactDatasetCohort:
             )
 
     @cached_property
+    def records_summary(self) -> pl.DataFrame:
+        """Produce summary of treatment record parameters.
+
+        Returns
+        -------
+        pl.DataFrame
+            DataFrame containing treatment record parameters.
+        """
+        if len(self._df) == 0:
+            return None
+        else:
+            records_summaries = []
+            for patient_index, dir in enumerate(self._df["path"]):
+                ds = RadixactDataset.from_path(dir)
+                records_summaries.append(
+                    ds.records_summary.with_columns(patient_index=pl.lit(patient_index))
+                )
+            return pl.concat(records_summaries, how="vertical_relaxed").select(
+                [pl.col("patient_index"), pl.all().exclude("patient_index")]
+            )
+
+    @cached_property
     def telemetry_metrics(self) -> pl.DataFrame:
         """Returns concatenated telemetry metrics for patient cohort.
 
@@ -266,6 +289,45 @@ class RadixactDatasetCohort:
             .flatten()
         )
         return result[~np.isnan(result)]
+
+    def plot_correction_histogram(
+        self,
+        parameters: list[str] | None = None,
+        binwidth: float = 0.25,
+        col_wrap: int = 4,
+        sharex: bool = False,
+        sharey: bool = True,
+    ) -> mpl.Figure:
+        """Generate a histogram plot of treatment couch and gantry corrections after
+        daily imaging and registration.
+
+        Parameters
+        ----------
+        parameters : list[str], optional
+            The couch adjustments to include in the figure. Possible options include:
+            "correction_x", "correction_y", "correction_z"
+                Couch adjustment in the IEC-X, IEC-Y and/or IEC-Z dimensions.
+            "correction_roll"
+                Gantry angle adjustment.
+            Default is None, in which case correction_x, correction_y, correction_z,
+            and correction_roll are used.
+        binwidth: float, optional.
+            Width of bin, in mm or degrees. Default is 0.25 (mm or degrees).
+        col_wrap : int, optional
+            Number of column facets within a row. Default is 4.
+        sharex : bool, optional
+            Flag for whether facets should share x axes. Default is False.
+        sharey : bool, optional
+            Flag for whether facets should share y axes. Default is True.
+
+        Returns
+        -------
+        mpl.Figure
+            Histogram of target offset values in each dimension.
+        """
+        return RadixactRecord.plot_correction_histogram(
+            self.records_summary, parameters, binwidth, col_wrap, sharex, sharey
+        )
 
     def plot_imaging_angles(self, width: int = 6) -> mpl.Figure:
         """_summary_
