@@ -26,7 +26,6 @@ from scipy import stats
 from scipy.ndimage import center_of_mass, shift
 
 from pyradlib.radixact.motion import RadixactSynchronyMotion
-from pyradlib.radixact.plan import RadixactPlan
 from pyradlib.radixact.timing import RadixactTiming
 
 
@@ -122,8 +121,25 @@ class RadixactSinogram:
             The DICOM RTPLAN file is returned as a two-dimensional numpy array
             encapsulated with helper functions.
         """
-        plan = RadixactPlan.from_dcm(path)
-        return plan.sinogram()
+        ds = pydicom.dcmread(path)
+        if ds.Modality != "RTPLAN":
+            raise ValueError("'Dataset' object attribute 'Modality' is not 'RTPLAN'")
+        data = []
+        for cp in ds.BeamSequence[0].ControlPointSequence:
+            if (0x300D, 0x10A7) in cp:
+                data.append(
+                    {
+                        "gantry_angle": float(cp.GantryAngle),
+                        "channel_values": [
+                            float(x)
+                            for x in cp[0x300D, 0x10A7]
+                            .value.decode("utf-8")
+                            .split("\\")
+                        ],
+                    }
+                )
+        df = pl.DataFrame(data)
+        return RadixactSinogram(df)
 
     @classmethod
     def from_delivery_analysis_csv(cls, path: str | os.PathLike) -> RadixactSinogram:
