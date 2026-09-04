@@ -296,7 +296,7 @@ class RadixactDatasetCohort:
         binwidth: float = 0.25,
         col_wrap: int = 4,
         sharex: bool = False,
-        sharey: bool = True,
+        sharey: bool = False,
     ) -> mpl.Figure:
         """Generate a histogram plot of treatment couch and gantry corrections after
         daily imaging and registration.
