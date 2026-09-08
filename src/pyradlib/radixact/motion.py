@@ -918,6 +918,52 @@ class RadixactSynchronyMotion:
             df, "session", offset_type, figsize
         )
 
+    def plot_target_offset_greater_than_threshold(
+        self, threshold_step: float = 0.1, threshold_limit: float | None = None
+    ) -> mpl.Figure:
+        """Plots the fraction of target offset data that is greater than a
+        variable threshold.
+
+        Parameters
+        ----------
+        threshold_step : float, optional
+            Threshold step or resolution, in mm. Default is 0.1 mm.
+        threshold_limit : float or None, optional
+            Threshold limit, beyond which fraction is not calculation, in mm. Default
+            is None, in which case no limit will be applied.
+
+        Returns
+        -------
+        mpl.Figure
+            Figure showing fraction of data where target offset is greater than a
+            variable threshold.
+
+        Notes
+        -----
+        This calculation is inspired by Figure 1 of Adamson et al. (2010), available at
+        DOI:10.1016/j.ijrobp.2009.09.027.
+        """
+        df = self.target_offset_greater_than_threshold(threshold_step, threshold_limit)
+        mapping = {
+            "fraction_target_offset_vector": "Vector target offset",
+            "fraction_delta_target_offset_vector": "ΔVector target offset",
+        }
+        unpivot_df = df.unpivot(index=["threshold"]).select(
+            [
+                pl.col("threshold").alias("Threshold (mm)"),
+                pl.col("variable").replace(mapping).alias("Target offset type"),
+                pl.col("value").alias("Fraction of target offset data > threshold"),
+            ]
+        )
+        ax = sns.lineplot(
+            data=unpivot_df,
+            x="Threshold (mm)",
+            y="Fraction of target offset data > threshold",
+            hue="Target offset type",
+        )
+        ax.set(yscale="log")
+        return ax.figure
+
     def session_fraction_less_than_threshold(
         self, offset_type: str = "target_offset_vector", threshold_step: float = 1
     ) -> pl.DataFrame:
@@ -946,6 +992,62 @@ class RadixactSynchronyMotion:
         """
         metrics = self.metrics.filter(pl.col("session_index").is_not_null())
         return self._fraction_less_than_threshold(metrics, offset_type, threshold_step)
+
+    def target_offset_greater_than_threshold(
+        self, threshold_step: float = 0.1, threshold_limit: float | None = None
+    ) -> pl.DataFrame:
+        """Calculates the fraction of target offset data that is greater than a
+        variable threshold.
+
+        Parameters
+        ----------
+        threshold_step : float, optional
+            Threshold step or resolution, in mm. Default is 0.1 mm.
+        threshold_limit : float or None, optional
+            Threshold limit, beyond which fraction is not calculation, in mm. Default
+            is None, in which case no limit will be applied.
+
+        Returns
+        -------
+        pl.DataFrame
+            DataFrame defining fraction of data where target offset is greater than a
+            variable threshold.
+
+        Notes
+        -----
+        This calculation is inspired by Figure 1 of Adamson et al. (2010), available at
+        DOI:10.1016/j.ijrobp.2009.09.027.
+        """
+        target_offset_max = (
+            self._df.select(["target_offset_vector", "delta_target_offset_vector"])
+            .max()
+            .to_numpy()
+            .max()
+        )
+        if not threshold_limit is None:
+            target_offset_max = max(target_offset_max, threshold_limit)
+        threshold_df = pl.DataFrame(
+            {
+                "threshold": np.arange(
+                    0, target_offset_max + 2 * threshold_step, threshold_step
+                )
+            }
+        )
+        return (
+            self._df.join(threshold_df, how="cross")
+            .group_by("threshold")
+            .agg(
+                [
+                    (pl.col("target_offset_vector") >= pl.col("threshold"))
+                    .mean()
+                    .alias("fraction_target_offset_vector"),
+                    (pl.col("delta_target_offset_vector") >= pl.col("threshold"))
+                    .mean()
+                    .alias("fraction_delta_target_offset_vector"),
+                ]
+            )
+            .sort("threshold")
+        )
 
     def to_compressed(self, path: str | os.PathLike) -> None:
         """Writes motion data to compressed npz file.

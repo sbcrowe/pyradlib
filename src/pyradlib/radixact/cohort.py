@@ -562,6 +562,39 @@ class RadixactDatasetCohort:
             offset_type, threshold_step, figsize
         )
 
+    def plot_target_offset_greater_than_threshold(
+        self,
+        target_offset_type: Literal[
+            "target_offset_vector", "delta_target_offset_vector"
+        ] = "target_offset_vector",
+        aspect: int = 1,
+    ) -> mpl.Figure:
+        """Plots the fraction of target offset data that is greater than a
+        variable threshold.
+
+        Parameters
+        ----------
+        threshold_step : float, optional
+            Threshold step or resolution, in mm. Default is 0.1 mm.
+        threshold_limit : float or None, optional
+            Threshold limit, beyond which fraction is not calculation, in mm. Default
+            is None, in which case no limit will be applied.
+
+        Returns
+        -------
+        mpl.Figure
+            Figure showing fraction of data where target offset is greater than a
+            variable threshold.
+
+        Notes
+        -----
+        This calculation is inspired by Figure 1 of Adamson et al. (2010), available at
+        DOI:10.1016/j.ijrobp.2009.09.027.
+        """
+        return self.motion.plot_target_offset_greater_than_threshold(
+            target_offset_type, aspect
+        )
+
     def plot_percentile_vector_target_offset(
         self, fig_size: tuple[float, float] = (12, 4)
     ) -> mpl.Figure:
@@ -600,5 +633,34 @@ class RadixactDatasetCohort:
         ax.set_ylabel("Vector target offset (mm)")
         ax.legend()
         return fig
+
+    def target_offset_greater_than_threshold(
+        self, threshold_step: float = 0.1, threshold_limit: float | None = None
+    ) -> pl.DataFrame:
+        """Calculates the fraction of target offset data that is greater than a
+        variable threshold.
+
+        Parameters
+        ----------
+        threshold_step : float, optional
+            Threshold step or resolution, in mm. Default is 0.1 mm.
+        threshold_limit : float or None, optional
+            Threshold limit, beyond which fraction is not calculation, in mm. Default
+            is None, in which case no limit will be applied.
+
+        Returns
+        -------
+        pl.DataFrame
+            DataFrame defining fraction of data where target offset is greater than a
+            variable threshold.
+
+        Notes
+        -----
+        This calculation is inspired by Figure 1 of Adamson et al. (2010), available at
+        DOI:10.1016/j.ijrobp.2009.09.027.
+        """
+        return self.motion.target_offset_greater_than_threshold(
+            threshold_step, threshold_limit
+        )
 
     # endregion
