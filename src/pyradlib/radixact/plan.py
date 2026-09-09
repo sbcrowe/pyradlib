@@ -34,7 +34,7 @@ class RadixactPlan:
         RadixactPlan
             The DICOM treatment plan wrapped in a helper class.
         """
-        self._ds = ds
+        self._ds: pydicom.Dataset = ds
 
     @classmethod
     def from_dcm(cls, path: str | os.PathLike) -> RadixactPlan:
@@ -85,9 +85,8 @@ class RadixactPlan:
         result = {}
         result["urn"] = self._ds.PatientID
         # TODO Manage names that aren't in format SMITH^JOHN
-        result["last_name"] = str(self._ds.PatientName).split("^")[0]
-        result["first_name"] = " ".join(str(self._ds.PatientName).split("^")[1:])
-        result["physician"] = str(self._ds.OperatorsName)
+        result["patient_name"] = str(self._ds.PatientName)
+        result["physician_name"] = str(self._ds.OperatorsName)
         result["plan_name"] = self._ds.RTPlanName
         result["plan_date"] = self._ds.RTPlanDate
         result["plan_intent"] = self._ds.PlanIntent
