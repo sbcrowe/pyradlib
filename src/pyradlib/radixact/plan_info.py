@@ -21,9 +21,7 @@ import polars as pl
 class RadixactPlanInformation:
     # region Constructors
 
-    def __init__(
-        self, df: pl.DataFrame, objectives: pl.DataFrame = None
-    ) -> RadixactPlanInformation:
+    def __init__(self, df: pl.DataFrame) -> RadixactPlanInformation:
         """Initialises a plan information wrapper.
 
         Parameters
@@ -38,8 +36,7 @@ class RadixactPlanInformation:
         RadixactPlanInformation
             Plan information data, in helper wrapper.
         """
-        self._df = df
-        self._objectives = objectives
+        self._df: pl.DataFrame = df
 
     @classmethod
     def from_xml(cls, path: str | os.PathLike) -> RadixactPlanInformation:
@@ -62,9 +59,10 @@ class RadixactPlanInformation:
         root = tree.getroot()
         plan = root.find("GENERAL_PLAN")
         profile_data["urn"] = plan.find("PATIENT_PROFILE").find("MEDICAL_ID").text
-        profile_data["last_name"] = plan.find("PATIENT_PROFILE").find("LAST_NAME").text
-        profile_data["first_name"] = (
-            plan.find("PATIENT_PROFILE").find("FIRST_NAME").text
+        profile_data["patient_name"] = (
+            plan.find("PATIENT_PROFILE").find("LAST_NAME").text
+            + "^"
+            + plan.find("PATIENT_PROFILE").find("FIRST_NAME").text
         )
         profile_data["plan_name"] = plan.find("PLAN_PROFILE").find("PLAN_NAME").text
         profile_data["datetime"] = datetime.datetime.fromisoformat(
@@ -79,14 +77,63 @@ class RadixactPlanInformation:
         profile_data["number_of_fractions"] = int(
             plan.find("PLAN_SETUP").find("NUMBER_OF_FRACTIONS").text
         )
-        profile_data["number_of_vois"] = plan.find("VOI_INTERSECTION_SETTINGS").attrib[
-            "size"
-        ]
-        profile_data["number_of_objectives"] = (
+        profile_data["number_of_vois"] = int(
+            plan.find("VOI_INTERSECTION_SETTINGS").attrib["size"]
+        )
+        profile_data["number_of_objectives"] = int(
             plan.find("DX_VX_VALUES").find("DX_VX_DATA_SET").attrib["size"]
         )
-        profile_data["number_of_fiducials"] = plan.find("FIDUCIALSET").attrib["size"]
+        profile_data["number_of_fiducials"] = int(
+            plan.find("FIDUCIALSET").attrib["size"]
+        )
         profile_data["ct_scanner"] = plan.find("DENSITY_MODEL").find("NAME").text
+        return cls(pl.DataFrame(profile_data))
+
+    # endregion
+
+    # region Properties
+
+    @property
+    def summary(self) -> pl.DataFrame:
+        """Produce summary of treatment plan information.
+
+        Returns
+        -------
+        pl.DataFrame
+            DataFrame containing treatment plan information.
+        """
+        return self._df
+
+    # endregion
+
+
+# region RadixactDoseObjectives
+
+
+class RadixactDoseObjectives:
+    # region Constructors
+
+    def __init__(self, df: pl.DataFrame) -> RadixactDoseObjectives:
+        """Initialises a planning dose objectives wrapper.
+
+        Parameters
+        ----------
+        df : pl.DataFrame
+            Dose objectives dataframe.
+
+        Returns
+        -------
+        RadixactDoseObjectives
+            Dose objective data, in helper wrapper.
+        """
+        self._df: pl.DataFrame = df
+
+    @classmethod
+    def from_xml(cls, path: str | os.PathLike) -> RadixactDoseObjectives:
+        tree = et.parse(path)
+        root = tree.getroot()
+        plan = root.find("GENERAL_PLAN")
+
         # Read dose objectives
         vois = []
         metrics = []
@@ -105,7 +152,7 @@ class RadixactPlanInformation:
             spec_value = round(float(dx_vx.find("SPECIFIED_VALUE").text))
             if dx_vx.find("DX_VX_CRITERIA") is None:
                 vois.append(voi)
-                metrics.append(objective_dict[spec_quantity] + spec_value)
+                metrics.append(objective_dict[spec_quantity] + str(spec_value))
                 objectives.append("undefined")
             else:
                 crit_quantity = (
@@ -149,21 +196,9 @@ class RadixactPlanInformation:
         objectives_df = pl.DataFrame(
             {"voi": vois, "metric": metrics, "objective": objectives}
         )
-        return cls(pl.DataFrame(profile_data), objectives_df)
+        return cls(objectives_df)
 
     # endregion
 
-    # region Properties
 
-    @property
-    def summary(self) -> pl.DataFrame:
-        """Produce summary of treatment plan information.
-
-        Returns
-        -------
-        pl.DataFrame
-            DataFrame containing treatment plan information.
-        """
-        return self._df
-
-    # endregion
+# endregion
