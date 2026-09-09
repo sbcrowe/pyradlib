@@ -33,7 +33,7 @@ class RadixactPlanSettings:
         RadixactPlanSettings
             Plan settings encapsulated in helping wrapper.
         """
-        self._df = df
+        self._df: pl.DataFrame = df
 
     @classmethod
     def from_plan_settings(cls, path: str | os.PathLike) -> RadixactPlanSettings:
@@ -54,7 +54,10 @@ class RadixactPlanSettings:
             for line in file:
                 if line.strip():
                     parameter, value = line.strip().split("=")
-                    data[parameter.strip()] = value.strip()
+                    data[parameter.strip()] = (
+                        value.strip().replace("false", "False").replace("true", "True")
+                    )
+
         return cls(pl.DataFrame(data))
 
     # endregion
