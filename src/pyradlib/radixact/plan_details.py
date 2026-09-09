@@ -34,7 +34,7 @@ class RadixactPlanDetails:
         RadixactPlanDetails
             Plan details in helper wrapper.
         """
-        self._df = df
+        self._df : pl.DataFrame = df
 
     @classmethod
     def from_xml(cls, path: str | os.PathLike) -> RadixactPlanDetails:
@@ -63,7 +63,7 @@ class RadixactPlanDetails:
         if len(plan_details_objects) > 0:
             fields = plan_details_objects[0].find("Fields")
             details["machine_id"] = fields.find("TreatmentMachineId").text
-            details["revision"] = fields.find("TreatmentMachineRevision").text
+            details["revision"] = int(fields.find("TreatmentMachineRevision").text)
             details["type"] = fields.find("PlanDeliveryType").text
             details["delivery"] = fields.find("DeliveryScheme").text
             details["mode"] = fields.find("PlanMode").text
