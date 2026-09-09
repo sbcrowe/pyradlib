@@ -952,16 +952,18 @@ class RadixactSynchronyMotion:
             [
                 pl.col("threshold").alias("Threshold (mm)"),
                 pl.col("variable").replace(mapping).alias("Target offset type"),
-                pl.col("value").alias("Fraction of target offset data > threshold"),
+                pl.col("value").alias("Fraction of target offset data ≥ threshold"),
             ]
         )
         ax = sns.lineplot(
             data=unpivot_df,
             x="Threshold (mm)",
-            y="Fraction of target offset data > threshold",
+            y="Fraction of target offset data ≥ threshold",
             hue="Target offset type",
         )
         ax.set(yscale="log")
+        ax.yaxis.set_major_formatter(mtick.ScalarFormatter())
+        ax.yaxis.get_major_formatter().set_scientific(False)
         return ax.figure
 
     def session_fraction_less_than_threshold(
