@@ -11,6 +11,7 @@ __credits__ = []
 __license__ = "GPL3"
 
 # import required code
+import datetime
 import os
 import xml.etree.ElementTree as et
 
@@ -66,8 +67,11 @@ class RadixactPlanInformation:
             plan.find("PATIENT_PROFILE").find("FIRST_NAME").text
         )
         profile_data["plan_name"] = plan.find("PLAN_PROFILE").find("PLAN_NAME").text
-        profile_data["date"] = (
-            plan.find("PLAN_PROFILE").find("TIMESTAMP").find("DATETIME").text
+        profile_data["datetime"] = datetime.datetime.fromisoformat(
+            plan.find("PLAN_PROFILE")
+            .find("TIMESTAMP")
+            .find("DATETIME")
+            .text.replace("TZ", "")
         )
         profile_data["prescribed_dose"] = float(
             plan.find("PLAN_SETUP").find("PRESCRIBED_DOSE").text
