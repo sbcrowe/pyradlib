@@ -3,12 +3,10 @@ import os
 from pyradlib.radixact.cohort import RadixactDatasetCohort
 from pyradlib.radixact.dataset import RadixactDataset
 from pyradlib.radixact.motion import RadixactSynchronyMotion
-from pyradlib.radixact.plan import (
-    RadixactPlan,
-    RadixactPlanDetails,
-    RadixactPlanInformation,
-    RadixactPlanSettings,
-)
+from pyradlib.radixact.plan import RadixactPlan
+from pyradlib.radixact.plan_details import RadixactPlanDetails
+from pyradlib.radixact.plan_info import RadixactPlanInformation
+from pyradlib.radixact.plan_settings import RadixactPlanSettings
 from pyradlib.radixact.sinogram import RadixactSinogram
 from pyradlib.radixact.timing import RadixactTiming
 
