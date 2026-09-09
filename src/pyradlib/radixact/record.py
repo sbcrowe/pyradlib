@@ -1,7 +1,7 @@
 """Record module.
 
-This module provides functionality for processing of general planning data from
-Synchrony treatments.
+This module provides functionality for processing of radiotherapy records for
+Radixact treatments.
 """
 
 # authorship information
