@@ -5,7 +5,7 @@ from pyradlib.radixact.dataset import RadixactDataset
 from pyradlib.radixact.motion import RadixactSynchronyMotion
 from pyradlib.radixact.plan import RadixactPlan
 from pyradlib.radixact.plan_details import RadixactPlanDetails
-from pyradlib.radixact.plan_info import RadixactPlanInformation
+from pyradlib.radixact.plan_info import RadixactDoseObjectives, RadixactPlanInformation
 from pyradlib.radixact.plan_settings import RadixactPlanSettings
 from pyradlib.radixact.sinogram import RadixactSinogram
 from pyradlib.radixact.timing import RadixactTiming
@@ -13,6 +13,7 @@ from pyradlib.radixact.timing import RadixactTiming
 __all__ = [
     "RadixactDataset",
     "RadixactDatasetCohort",
+    "RadixactDoseObjectives",
     "RadixactPlan",
     "RadixactPlanDetails",
     "RadixactPlanInformation",
