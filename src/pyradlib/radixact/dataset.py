@@ -95,7 +95,7 @@ class RadixactDataset:
         RadixactDataset
             The encapsulated dataset object.
         """
-        self._files = files
+        self._files: pl.DataFrame = files
         logger.info(f"Dataset initialised with {len(self._files)!s} files")
 
     @classmethod
@@ -205,182 +205,9 @@ class RadixactDataset:
 
     # region Properties
 
-    @property
-    def combined_plan_summary(self) -> pl.DataFrame:
-        """Return joined plan, plan detail and plan information summaries.
-
-        Returns
-        -------
-        pl.DataFrame
-            Combined plan, plan detail and plan information summaries.
-        """
-        shared_plan_detail_columns = list(
-            set(self.plan_summary.columns) & set(self.plan_details_summary.columns)
-        )
-        shared_plan_info_columns = list(
-            set(self.plan_summary.columns) & set(self.plan_informations_summary.columns)
-        )
-        return self.plan_summary.join(
-            self.plan_details_summary, on=shared_plan_detail_columns, how="inner"
-        ).join(self.plan_informations[0]._df, on=shared_plan_info_columns, how="inner")
-
-    @cached_property
-    def detector_sinograms(self) -> list[RadixactSinogram]:
-        """Returns list containing detector sinograms.
-
-        Returns
-        -------
-        list[RadixactSinogram]
-            List of detector sinograms for each delivery session in the dataset.
-        """
-        # TODO Potentially include orig_path or curr_path.split("-")[-3] as plan_uid,
-        # [-2] as fraction number, and [-1].replace(".det", "") as fragment.
-        detector_sinograms = []
-        detector_sinogram_files = self._get_filtered_series_list(
-            "Detector Sinogram", series="curr_path"
-        )
-        logger.debug(
-            f"Dataset contains {len(detector_sinogram_files)} detector sinogram files"
-        )
-        if len(detector_sinogram_files) == 0:
-            logger.debug("Dataset contains no detector sinogram files")
-            return detector_sinograms
-        else:
-            for detector_sinogram_file in detector_sinogram_files:
-                logger.debug(f"Loading {detector_sinogram_file}")
-                detector_sinograms.append(
-                    RadixactSinogram.from_det(detector_sinogram_file)
-                )
-            logger.info(f"Loaded {len(detector_sinograms)} detector sinogram files")
-            return detector_sinograms
-
-    @cached_property
-    def dose_distributions(self) -> list[pydicom.Dataset]:
-        """Returns list containing dose distributions.
-
-        Returns
-        -------
-        list[pydicom.Dataset]
-            List of dose distributions for each plan in the dataset.
-        """
-        # TODO Potentially include orig_path or curr_path.split("-")[-2] as fraction number
-        # or include entire UID from orig_path or curr_path.
-        dose_distributions = []
-        dose_distribution_files = self._get_filtered_series_list(
-            "Dose Distribution", series="curr_path"
-        )
-        logger.debug(
-            f"Dataset contains {len(dose_distribution_files)} dose distribution files"
-        )
-        if len(dose_distribution_files) == 0:
-            logger.debug("Dataset contains no dose distribution files")
-            return dose_distributions
-        else:
-            for dose_distribution_file in dose_distribution_files:
-                logger.debug(f"Loading {dose_distribution_file}")
-                dose_distributions.append(pydicom.dcmread(dose_distribution_file))
-            logger.info(f"Loaded {len(dose_distributions)} dose distribution files")
-            return dose_distributions
-
-    @cached_property
-    def motion(self) -> RadixactSynchronyMotion:
-        """Returns concatenated motion data.
-
-        Returns
-        -------
-        RadixactSynchronyMotion
-            Concated Synchrony motion data from the dataset.
-        """
-        if len(self.motions) == 0:
-            return None
-        else:
-            return RadixactSynchronyMotion.from_session_motions(self.motions)
-
     @cached_property
     def motion_metrics(self) -> pl.DataFrame:
-        return self.motion.metrics
-
-    @cached_property
-    def motions(self) -> list[RadixactSynchronyMotion]:
-        """Returns list containing motion data.
-
-        Returns
-        -------
-        list[RadixactSynchronyMotion]
-            List of Synchrony motion data from each delivery session in the dataset.
-        """
-        # TODO Potentially include orig_path or curr_path.split("-")[-2] as fraction number
-        # or include entire UID from orig_path or curr_path.
-        motions = []
-        motion_files = self._get_filtered_series_list("Motion Data", series="curr_path")
-        if len(motion_files) == 0:
-            logger.debug("Dataset contains no motion data files")
-            return motions
-        else:
-            for motion_file in motion_files:
-                logger.debug(f"Loading {motion_file}")
-                motion = RadixactSynchronyMotion.from_xml(motion_file)
-                if motion is not None:
-                    motions.append(motion)
-            logger.info(f"Loaded {len(motions)} motion data files")
-            return motions
-
-    @cached_property
-    def plan_details_summary(self) -> pl.DataFrame:
-        """Produce summary of treatment plan details, for all plans in the dataset.
-
-        Returns
-        -------
-        pl.DataFrame
-            DataFrame containing treatment plan details, for all plans in the
-            dataset.
-        """
-        return pl.concat(
-            [
-                plan_details.summary.with_columns(plan_index=pl.lit(key))
-                for key, plan_details in enumerate(self.plan_details)
-            ]
-        ).select([pl.col("plan_index"), pl.all().exclude("plan_index")])
-
-    @cached_property
-    def plan_informations_summary(self) -> pl.DataFrame:
-        """Produce summary of treatment plan information, for all plans in the dataset.
-
-        Returns
-        -------
-        pl.DataFrame
-            DataFrame containing treatment plan information, for all plans in the
-            dataset.
-        """
-        return pl.concat(
-            [
-                plan_information.summary.with_columns(plan_set_index=pl.lit(key))
-                for key, plan_information in enumerate(self.plan_informations)
-            ]
-        ).select([pl.col("plan_set_index"), pl.all().exclude("plan_set_index")])
-
-    @cached_property
-    def plans(self) -> list[RadixactPlan]:
-        """Reurns list containing treatment plans.
-
-        Returns
-        -------
-        list[RadixactPlan]
-            List of treatment plans in the dataset.
-        """
-        # TODO Potentially extract ds.BeamSequence[0].DeviceSerialNumber and
-        # ds.RTPlanLabel to be used as identifiers in a dictionary.
-        plans = []
-        plan_files = self._get_filtered_series_list("Plan", series="curr_path")
-        if len(plan_files) == 0:
-            logger.debug("Dataset contains no plan files")
-            return plans
-        else:
-            for plan_file in plan_files:
-                logger.debug(f"Loading {plan_file}")
-                plans.append(RadixactPlan.from_dcm(plan_file))
-            logger.info(f"Loaded {len(plans)} plan files")
-            return plans
+        return self._combined_motion.metrics
 
     @cached_property
     def plan_summary(self) -> pl.DataFrame:
@@ -392,152 +219,22 @@ class RadixactDataset:
             DataFrame containing treatment plan parameters, for all plans in the
             dataset.
         """
-        return pl.concat(
-            [
-                plan.summary.with_columns(plan_index=pl.lit(key))
-                for key, plan in enumerate(self.plans)
-            ]
-        ).select([pl.col("plan_index"), pl.all().exclude("plan_index")])
-
-    @cached_property
-    def plan_details(self) -> list[RadixactPlanDetails]:
-        """Returns list containing treatment plan details.
-
-        Returns
-        -------
-        list[RadixactPlanDetails]
-            List of treatment plan details in the dataset.
-        """
-        plan_details = []
-        plan_detail_files = self._get_filtered_series_list(
-            "Plan Details", series="curr_path"
+        _plan_summary_df = self._combined_plan_summary
+        _plan_details_summary_df = self._combined_plan_details_summary.with_columns(
+            pl.col("plan_detail_index").alias("plan_index")
+        ).select(pl.all().exclude("plan_detail_index"))
+        _plan_informations_summary_df = self._combined_plan_information_summary.select(
+            pl.all().exclude("plan_information_index")
         )
-        if len(plan_detail_files) == 0:
-            logger.debug("Dataset contains no plan detail files")
-            return plan_details
-        else:
-            for plan_detail_file in plan_detail_files:
-                logger.debug(f"Loading {plan_detail_file}")
-                plan_details.append(RadixactPlanDetails.from_xml(plan_detail_file))
-            logger.info(f"Loaded {len(plan_details)} plan detail files")
-            return plan_details
-
-    @cached_property
-    def plan_informations(self) -> list[RadixactPlanInformation]:
-        """Returns list containing treatment plan information.
-
-        Returns
-        -------
-        list[RadixactPlanInformation]
-            List of treatment plan informations in the dataset.
-        """
-        plan_informations = []
-        plan_information_files = self._get_filtered_series_list(
-            "Plan Information", series="curr_path"
+        shared_plan_detail_columns = list(
+            set(_plan_summary_df.columns) & set(_plan_details_summary_df.columns)
         )
-        if len(plan_information_files) == 0:
-            logger.debug("Dataset contains no plan information files")
-            return plan_informations
-        else:
-            for plan_information_file in plan_information_files:
-                logger.debug(f"Loading {plan_information_file}")
-                plan_informations.append(
-                    RadixactPlanInformation.from_xml(plan_information_file)
-                )
-            logger.info(f"Loaded {len(plan_informations)} plan information files")
-            return plan_informations
-
-    @cached_property
-    def plan_settings(self) -> list[RadixactPlanSettings]:
-        """Returns list containing treatment plan settings.
-
-        Returns
-        -------
-        list[RadixactPlanSettings]
-            List of treatment plan settings in the dataset.
-        """
-        plan_settings = []
-        plan_setting_files = self._get_filtered_series_list(
-            "Plan Settings", series="curr_path"
+        shared_plan_info_columns = list(
+            set(_plan_summary_df.columns) & set(_plan_informations_summary_df.columns)
         )
-        if len(plan_setting_files) == 0:
-            logger.debug("Dataset contains no plan setting files")
-            return plan_settings
-        else:
-            for plan_setting_file in plan_setting_files:
-                logger.debug(f"Loading {plan_setting_file}")
-                plan_settings.append(
-                    RadixactPlanSettings.from_plan_settings(plan_setting_file)
-                )
-            logger.info(f"Loaded {len(plan_settings)} plan setting files")
-            return plan_settings
-
-    @cached_property
-    def plan_settings_summary(self) -> pl.DataFrame:
-        """Produce summary of treatment plan settings, for all plan settings in dataset.
-
-        Returns
-        -------
-        pl.DataFrame
-            Summary of treatment plan settings, for all plan settings in dataset.
-        """
-        return pl.concat(
-            [
-                plan_settings.summary.with_columns(plan_settings_id=pl.lit(key))
-                for key, plan_settings in enumerate(self.plan_settings)
-            ]
-        )
-
-    @cached_property
-    def plan_sinograms(self) -> list[RadixactSinogram]:
-        """Returns list containing plan sinograms.
-
-        Returns
-        -------
-        list[RadixactSinogram]
-            List of treatment plan sinograms in the dataset.
-        """
-        # TODO Potentially include orig_path or curr_path.split("~")[-2] as fraction number
-        # or include entire UID from orig_path or curr_path.
-        plan_sinograms = []
-        plan_sinogram_files = self._get_filtered_series_list(
-            "Plan Sinogram", series="curr_path"
-        )
-        logger.debug(f"Dataset contains {len(plan_sinogram_files)} plan sinogram files")
-        if len(plan_sinogram_files) == 0:
-            return plan_sinograms
-        else:
-            for plan_sinogram_file in plan_sinogram_files:
-                logger.debug(f"Loading {plan_sinogram_file}")
-                plan_sinograms.append(RadixactSinogram.from_dplan(plan_sinogram_file))
-            logger.info(f"Loaded {len(plan_sinograms)} plan sinogram files")
-            return plan_sinograms
-
-    @cached_property
-    def records(self) -> list[pydicom.Dataset]:
-        """Returns list containing fractional delivery radiation records.
-
-        Returns
-        -------
-        list[pydicom.Dataset]
-            List of radiation records in the dataset.
-        """
-        # TODO Potentially include ds.ReferenceRTPlanSequence[0].ReferenceSOPInstanceUID,
-        # which matches ReferenceSOPInstanceUID in the RTPLAN, also ds.InstanceNumber,
-        # which includes fraction_number as instance[:-2] and session as instance[-2:]
-        radiation_records = []
-        radiation_record_files = self._get_filtered_series_list(
-            "Record", series="curr_path"
-        )
-        if len(radiation_record_files) == 0:
-            logger.debug("Dataset contains no radiation record files")
-            return radiation_records
-        else:
-            for radiation_record_file in radiation_record_files:
-                logger.debug(f"Loading {radiation_record_file}")
-                radiation_records.append(RadixactRecord.from_dcm(radiation_record_file))
-            logger.info(f"Loaded {len(radiation_records)} radiation record files")
-            return radiation_records
+        return _plan_summary_df.join(
+            _plan_details_summary_df, on=shared_plan_detail_columns, how="inner"
+        ).join(_plan_informations_summary_df, on=shared_plan_info_columns, how="inner")
 
     @cached_property
     def records_summary(self) -> pl.DataFrame:
@@ -550,39 +247,16 @@ class RadixactDataset:
         """
         return pl.concat(
             [
-                record.summary.with_columns(session_index=pl.lit(key))
-                for key, record in enumerate(self.records)
+                record.summary.with_columns(pl.lit(key).alias("session_index"))
+                for key, record in enumerate(self._records)
             ],
             how="vertical_relaxed",
-        )
-
-    @cached_property
-    def structure_sets(self) -> list[pydicom.Dataset]:
-        """Returns list containing structure sets.
-
-        Returns
-        -------
-        list[pydicom.Dataset]
-            List of structure sets in the dataset.
-        """
-        structure_sets = []
-        structure_set_files = self._get_filtered_series_list(
-            "Structure Set", series="curr_path"
-        )
-        if len(structure_set_files) == 0:
-            logger.debug("Dataset contains no structure set files")
-            return structure_sets
-        else:
-            for structure_set_file in structure_set_files:
-                logger.debug(f"Loading {structure_set_file}")
-                structure_sets.append(pydicom.dcmread(structure_set_file))
-            logger.info(f"Loaded {len(structure_sets)} structure set files")
-            return structure_sets
+        ).select([pl.col("session_index"), pl.all().exclude("session_index")])
 
     @cached_property
     def telemetry_metrics(self) -> pl.DataFrame:
         results = []
-        for session_index, telemetry_sinogram in enumerate(self.telemetry_sinograms):
+        for session_index, telemetry_sinogram in enumerate(self._telemetry_sinograms):
             plan_sinogram = self._find_matching_planned_sinogram(telemetry_sinogram)
             if plan_sinogram is None:
                 continue
@@ -626,7 +300,352 @@ class RadixactDataset:
         return pl.DataFrame(results)
 
     @cached_property
-    def telemetry_sinograms(self) -> list[RadixactSinogram]:
+    def _combined_motion(self) -> RadixactSynchronyMotion | None:
+        """Returns concatenated motion data.
+
+        Returns
+        -------
+        RadixactSynchronyMotion | None
+            Concated Synchrony motion data from the dataset.
+        """
+        if len(self._motions) == 0:
+            return None
+        else:
+            return RadixactSynchronyMotion.from_session_motions(self._motions)
+
+    @cached_property
+    def _combined_plan_details_summary(self) -> pl.DataFrame:
+        """Produce summary of treatment plan details, for all plans in the dataset.
+
+        Returns
+        -------
+        pl.DataFrame
+            DataFrame containing treatment plan details, for all plans in the
+            dataset.
+        """
+        return pl.concat(
+            [
+                plan_details.summary.with_columns(
+                    pl.lit(key).alias("plan_detail_index")
+                )
+                for key, plan_details in enumerate(self._plan_details)
+            ]
+        ).select([pl.col("plan_detail_index"), pl.all().exclude("plan_detail_index")])
+
+    @cached_property
+    def _combined_plan_information_summary(self) -> pl.DataFrame:
+        """Produce summary of treatment plan information, for all plans in the dataset.
+
+        Returns
+        -------
+        pl.DataFrame
+            DataFrame containing treatment plan information, for all plans in the
+            dataset.
+        """
+        return pl.concat(
+            [
+                plan_information.summary.with_columns(
+                    pl.lit(key).alias("plan_information_index")
+                )
+                for key, plan_information in enumerate(self._plan_informations)
+            ]
+        ).select(
+            [
+                pl.col("plan_information_index"),
+                pl.all().exclude("plan_information_index"),
+            ]
+        )
+
+    @cached_property
+    def _combined_plan_settings_summary(self) -> pl.DataFrame:
+        """Produce summary of treatment plan settings, for all plan settings in dataset.
+
+        Returns
+        -------
+        pl.DataFrame
+            Summary of treatment plan settings, for all plan settings in dataset.
+        """
+        return pl.concat(
+            [
+                plan_settings.summary.with_columns(
+                    pl.lit(key).alias("plan_setting_index")
+                )
+                for key, plan_settings in enumerate(self._plan_settings)
+            ]
+        ).select([pl.col("plan_setting_index"), pl.all().exclude("plan_setting_index")])
+
+    @cached_property
+    def _combined_plan_summary(self) -> pl.DataFrame:
+        """Produce summary of treatment plan parameters, for all plans in the dataset.
+
+        Returns
+        -------
+        pl.DataFrame
+            DataFrame containing treatment plan parameters, for all plans in the
+            dataset.
+        """
+        return pl.concat(
+            [
+                plan.summary.with_columns(pl.lit(key).alias("plan_index"))
+                for key, plan in enumerate(self._plans)
+            ]
+        ).select([pl.col("plan_index"), pl.all().exclude("plan_index")])
+
+    @cached_property
+    def _detector_sinograms(self) -> list[RadixactSinogram]:
+        """Returns list containing detector sinograms.
+
+        Returns
+        -------
+        list[RadixactSinogram]
+            List of detector sinograms for each delivery session in the dataset.
+        """
+        # TODO Potentially include orig_path or curr_path.split("-")[-3] as plan_uid,
+        # [-2] as fraction number, and [-1].replace(".det", "") as fragment.
+        detector_sinograms = []
+        detector_sinogram_files = self._get_filtered_series_list(
+            "Detector Sinogram", series="curr_path"
+        )
+        logger.debug(
+            f"Dataset contains {len(detector_sinogram_files)} detector sinogram files"
+        )
+        if len(detector_sinogram_files) == 0:
+            logger.debug("Dataset contains no detector sinogram files")
+            return detector_sinograms
+        else:
+            for detector_sinogram_file in detector_sinogram_files:
+                logger.debug(f"Loading {detector_sinogram_file}")
+                detector_sinograms.append(
+                    RadixactSinogram.from_det(detector_sinogram_file)
+                )
+            logger.info(f"Loaded {len(detector_sinograms)} detector sinogram files")
+            return detector_sinograms
+
+    @cached_property
+    def _dose_distributions(self) -> list[pydicom.Dataset]:
+        """Returns list containing dose distributions.
+
+        Returns
+        -------
+        list[pydicom.Dataset]
+            List of dose distributions for each plan in the dataset.
+        """
+        # TODO Potentially include orig_path or curr_path.split("-")[-2] as fraction number
+        # or include entire UID from orig_path or curr_path.
+        dose_distributions = []
+        dose_distribution_files = self._get_filtered_series_list(
+            "Dose Distribution", series="curr_path"
+        )
+        logger.debug(
+            f"Dataset contains {len(dose_distribution_files)} dose distribution files"
+        )
+        if len(dose_distribution_files) == 0:
+            logger.debug("Dataset contains no dose distribution files")
+            return dose_distributions
+        else:
+            for dose_distribution_file in dose_distribution_files:
+                logger.debug(f"Loading {dose_distribution_file}")
+                dose_distributions.append(pydicom.dcmread(dose_distribution_file))
+            logger.info(f"Loaded {len(dose_distributions)} dose distribution files")
+            return dose_distributions
+
+    @cached_property
+    def _motions(self) -> list[RadixactSynchronyMotion]:
+        """Returns list containing motion data.
+
+        Returns
+        -------
+        list[RadixactSynchronyMotion]
+            List of Synchrony motion data from each delivery session in the dataset.
+        """
+        # TODO Potentially include orig_path or curr_path.split("-")[-2] as fraction number
+        # or include entire UID from orig_path or curr_path.
+        motions = []
+        motion_files = self._get_filtered_series_list("Motion Data", series="curr_path")
+        if len(motion_files) == 0:
+            logger.debug("Dataset contains no motion data files")
+            return motions
+        else:
+            for motion_file in motion_files:
+                logger.debug(f"Loading {motion_file}")
+                motion = RadixactSynchronyMotion.from_xml(motion_file)
+                if motion is not None:
+                    motions.append(motion)
+            logger.info(f"Loaded {len(motions)} motion data files")
+            return motions
+
+    @cached_property
+    def _plan_details(self) -> list[RadixactPlanDetails]:
+        """Returns list containing treatment plan details.
+
+        Returns
+        -------
+        list[RadixactPlanDetails]
+            List of treatment plan details in the dataset.
+        """
+        plan_details = []
+        plan_detail_files = self._get_filtered_series_list(
+            "Plan Details", series="curr_path"
+        )
+        if len(plan_detail_files) == 0:
+            logger.debug("Dataset contains no plan detail files")
+            return plan_details
+        else:
+            for plan_detail_file in plan_detail_files:
+                logger.debug(f"Loading {plan_detail_file}")
+                plan_details.append(RadixactPlanDetails.from_xml(plan_detail_file))
+            logger.info(f"Loaded {len(plan_details)} plan detail files")
+            return plan_details
+
+    @cached_property
+    def _plan_informations(self) -> list[RadixactPlanInformation]:
+        """Returns list containing loaded treatment plan information.
+
+        Returns
+        -------
+        list[RadixactPlanInformation]
+            List of treatment plan informations in the dataset.
+        """
+        plan_informations = []
+        plan_information_files = self._get_filtered_series_list(
+            "Plan Information", series="curr_path"
+        )
+        if len(plan_information_files) == 0:
+            logger.debug("Dataset contains no plan information files")
+            return plan_informations
+        else:
+            for plan_information_file in plan_information_files:
+                logger.debug(f"Loading {plan_information_file}")
+                plan_informations.append(
+                    RadixactPlanInformation.from_xml(plan_information_file)
+                )
+            logger.info(f"Loaded {len(plan_informations)} plan information files")
+            return plan_informations
+
+    @cached_property
+    def _plan_settings(self) -> list[RadixactPlanSettings]:
+        """Returns list containing loaded treatment plan settings.
+
+        Returns
+        -------
+        list[RadixactPlanSettings]
+            List of treatment plan settings in the dataset.
+        """
+        plan_settings = []
+        plan_setting_files = self._get_filtered_series_list(
+            "Plan Settings", series="curr_path"
+        )
+        if len(plan_setting_files) == 0:
+            logger.debug("Dataset contains no plan setting files")
+            return plan_settings
+        else:
+            for plan_setting_file in plan_setting_files:
+                logger.debug(f"Loading {plan_setting_file}")
+                plan_settings.append(
+                    RadixactPlanSettings.from_plan_settings(plan_setting_file)
+                )
+            logger.info(f"Loaded {len(plan_settings)} plan setting files")
+            return plan_settings
+
+    @cached_property
+    def _plan_sinograms(self) -> list[RadixactSinogram]:
+        """Returns list containing plan sinograms.
+
+        Returns
+        -------
+        list[RadixactSinogram]
+            List of treatment plan sinograms in the dataset.
+        """
+        # TODO Potentially include orig_path or curr_path.split("~")[-2] as fraction number
+        # or include entire UID from orig_path or curr_path.
+        plan_sinograms = []
+        plan_sinogram_files = self._get_filtered_series_list(
+            "Plan Sinogram", series="curr_path"
+        )
+        logger.debug(f"Dataset contains {len(plan_sinogram_files)} plan sinogram files")
+        if len(plan_sinogram_files) == 0:
+            return plan_sinograms
+        else:
+            for plan_sinogram_file in plan_sinogram_files:
+                logger.debug(f"Loading {plan_sinogram_file}")
+                plan_sinograms.append(RadixactSinogram.from_dplan(plan_sinogram_file))
+            logger.info(f"Loaded {len(plan_sinograms)} plan sinogram files")
+            return plan_sinograms
+
+    @cached_property
+    def _plans(self) -> list[RadixactPlan]:
+        """Reurns list containing treatment plans.
+
+        Returns
+        -------
+        list[RadixactPlan]
+            List of treatment plans in the dataset.
+        """
+        # TODO Potentially extract ds.BeamSequence[0].DeviceSerialNumber and
+        # ds.RTPlanLabel to be used as identifiers in a dictionary.
+        plans = []
+        plan_files = self._get_filtered_series_list("Plan", series="curr_path")
+        if len(plan_files) == 0:
+            logger.debug("Dataset contains no plan files")
+            return plans
+        else:
+            for plan_file in plan_files:
+                logger.debug(f"Loading {plan_file}")
+                plans.append(RadixactPlan.from_dcm(plan_file))
+            logger.info(f"Loaded {len(plans)} plan files")
+            return plans
+
+    @cached_property
+    def _records(self) -> list[pydicom.Dataset]:
+        """Returns list containing fractional delivery radiation records.
+
+        Returns
+        -------
+        list[pydicom.Dataset]
+            List of radiation records in the dataset.
+        """
+        # TODO Potentially include ds.ReferenceRTPlanSequence[0].ReferenceSOPInstanceUID,
+        # which matches ReferenceSOPInstanceUID in the RTPLAN, also ds.InstanceNumber,
+        # which includes fraction_number as instance[:-2] and session as instance[-2:]
+        radiation_records = []
+        radiation_record_files = self._get_filtered_series_list(
+            "Record", series="curr_path"
+        )
+        if len(radiation_record_files) == 0:
+            logger.debug("Dataset contains no radiation record files")
+            return radiation_records
+        else:
+            for radiation_record_file in radiation_record_files:
+                logger.debug(f"Loading {radiation_record_file}")
+                radiation_records.append(RadixactRecord.from_dcm(radiation_record_file))
+            logger.info(f"Loaded {len(radiation_records)} radiation record files")
+            return radiation_records
+
+    @cached_property
+    def _structure_sets(self) -> list[pydicom.Dataset]:
+        """Returns list containing structure sets.
+
+        Returns
+        -------
+        list[pydicom.Dataset]
+            List of structure sets in the dataset.
+        """
+        structure_sets = []
+        structure_set_files = self._get_filtered_series_list(
+            "Structure Set", series="curr_path"
+        )
+        if len(structure_set_files) == 0:
+            logger.debug("Dataset contains no structure set files")
+            return structure_sets
+        else:
+            for structure_set_file in structure_set_files:
+                logger.debug(f"Loading {structure_set_file}")
+                structure_sets.append(pydicom.dcmread(structure_set_file))
+            logger.info(f"Loaded {len(structure_sets)} structure set files")
+            return structure_sets
+
+    @cached_property
+    def _telemetry_sinograms(self) -> list[RadixactSinogram]:
         """Returns list containing telemetry sinograms from fractional deliveries.
 
         Returns
@@ -652,7 +671,7 @@ class RadixactDataset:
             return telemetry_sinograms
 
     @cached_property
-    def telemetry_timings(self) -> list[RadixactTiming]:
+    def _telemetry_timings(self) -> list[RadixactTiming]:
         """Returns list containing telemetry timings from fractional deliveries.
 
         Returns
@@ -756,7 +775,9 @@ class RadixactDataset:
         mpl.Figure
             Boxplot of values in each dimension.
         """
-        return self.motion.plot_motion_boxplot_sns(parameters, aspect, col_wrap, sharey)
+        return self._combined_motion.plot_motion_boxplot_sns(
+            parameters, aspect, col_wrap, sharey
+        )
 
     def plot_motion_histogram(
         self,
@@ -795,7 +816,7 @@ class RadixactDataset:
         mpl.Figure
             Histogram of target offset values in each dimension.
         """
-        return self.motion.plot_motion_histogram(
+        return self._combined_motion.plot_motion_histogram(
             mode, fig_size, offset_lim, offset_bin, vector_lim, vector_bin, title
         )
 
@@ -845,7 +866,7 @@ class RadixactDataset:
         mpl.Figure
             Histogram of target offset values in each dimension.
         """
-        return self.motion.plot_motion_histogram_sns(
+        return self._combined_motion.plot_motion_histogram_sns(
             parameters, binwidth, col_wrap, sharex, sharey
         )
 
@@ -909,10 +930,10 @@ class RadixactDataset:
                 "delta_time",
             ]
             + parameters
-            if col in self.motion._df
+            if col in self._combined_motion._df
         ]
         unpivot_df = (
-            self.motion._df.select(select)
+            self._combined_motion._df.select(select)
             .unpivot(index=["session_index", "delta_time"])
             .select(
                 [
@@ -964,7 +985,7 @@ class RadixactDataset:
         This calculation is inspired by Figure 1 of Adamson et al. (2010), available at
         DOI:10.1016/j.ijrobp.2009.09.027.
         """
-        return self.motion.plot_target_offset_greater_than_threshold(
+        return self._combined_motion.plot_target_offset_greater_than_threshold(
             target_offset_type, aspect
         )
 
@@ -998,7 +1019,7 @@ class RadixactDataset:
         This calculation is inspired by Figure 5(b) of Li et al. (2008), available at
         DOI:10.1016/j.ijrobp.2007.10.049.
         """
-        return self.motion.plot_session_fraction_less_than_threshold(
+        return self._combined_motion.plot_session_fraction_less_than_threshold(
             offset_type, threshold_step, figsize
         )
 
@@ -1034,15 +1055,15 @@ class RadixactDataset:
                 # "Telemetry Timing",
             ]
         properties = {
-            "Detector Sinogram": self.detector_sinograms,
-            "Motion Data": self.motions,
+            "Detector Sinogram": self._detector_sinograms,
+            "Motion Data": self._motions,
             # "Plan": self.plans,
             # "Plan Details": self.plan_details,
             # "Plan Information": self.plan_informations,
             # "Plan Settings": self.plan_settings,
-            "Plan Sinogram": self.plan_sinograms,
+            "Plan Sinogram": self._plan_sinograms,
             # "Record": self.radiation_records,
-            "Telemetry Sinogram": self.telemetry_sinograms,
+            "Telemetry Sinogram": self._telemetry_sinograms,
             # "Telemetry Timing": self.telemetry_timings,
         }
         for type in types:
@@ -1130,7 +1151,7 @@ class RadixactDataset:
         This calculation is inspired by Figure 1 of Adamson et al. (2010), available at
         DOI:10.1016/j.ijrobp.2009.09.027.
         """
-        return self.motion.target_offset_greater_than_threshold(
+        return self._combined_motion.target_offset_greater_than_threshold(
             threshold_step, threshold_limit
         )
 
@@ -1146,7 +1167,7 @@ class RadixactDataset:
         # TODO handle incomplete delivery sessions
         matching_sinogram = None
         matching_sinogram_total_lot_difference = np.inf
-        for plan_sinogram in self.plan_sinograms:
+        for plan_sinogram in self._plan_sinograms:
             if len(plan_sinogram) == len(telemetry_sinogram):
                 plan_sinogram_total_lots = np.sum(
                     plan_sinogram.fractional_leaf_open_times(), axis=1

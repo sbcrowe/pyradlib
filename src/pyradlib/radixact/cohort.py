@@ -122,20 +122,6 @@ class RadixactDatasetCohort:
     # region Properties
 
     @cached_property
-    def motion(self) -> RadixactSynchronyMotion:
-        """Returns concatenated motion data.
-
-        Returns
-        -------
-        RadixactSynchronyMotion
-            Concated Synchrony motion data from the cohort.
-        """
-        if len(self._df) == 0:
-            return None
-        else:
-            return RadixactSynchronyMotion.from_patient_motions(self.motions)
-
-    @cached_property
     def motion_metrics(self) -> pl.DataFrame:
         """Returns concatenated motion metrics for patient cohort.
 
@@ -147,27 +133,7 @@ class RadixactDatasetCohort:
         if len(self._df) == 0:
             return None
         else:
-            return self.motion.metrics
-
-    @cached_property
-    def motions(self) -> list[RadixactSynchronyMotion]:
-        """Returns list of motions for patient cohort.
-
-        Returns
-        -------
-        list[RadixactSynchronyMotion]
-            List of encapsulated motions, one for each patient.
-
-        Note
-        ----
-        This method is slow. It requires parsing of as many XML files as there are
-        delivery sessions in the patient cohort.
-        """
-        motions = []
-        for dir in self._df["path"]:
-            ds = RadixactDataset.from_path(dir)
-            motions.append(ds.motion)
-        return motions
+            return self._combined_motion.metrics
 
     @cached_property
     def plan_summary(self) -> pl.DataFrame:
@@ -182,36 +148,17 @@ class RadixactDatasetCohort:
             return None
         else:
             plan_summaries = []
-            for patient_index, dir in enumerate(self._df["path"]):
-                ds = RadixactDataset.from_path(dir)
-                plan_summaries.append(
-                    ds.plan_summary.with_columns(patient_index=pl.lit(patient_index))
+            for patient_index, path in enumerate(self._df["path"]):
+                ds = RadixactDataset.from_path(path)
+                ds.plan_summary.with_columns(
+                    pl.lit(patient_index).alias("patient_index")
                 )
-            return pl.concat(plan_summaries).select(
-                [pl.col("patient_index"), pl.all().exclude("patient_index")]
-            )
-
-    @cached_property
-    def plan_settings_summary(self) -> pl.DataFrame:
-        """Returns concatenated plan settings for patient cohort.
-
-        Returns
-        -------
-        pl.DataFrame
-            Concatenated plan settings for patient cohort.
-        """
-        if len(self._df) == 0:
-            return None
-        else:
-            plan_settings_summaries = []
-            for patient_index, dir in enumerate(self._df["path"]):
-                ds = RadixactDataset.from_path(dir)
-                plan_settings_summaries.append(
-                    ds.plan_settings_summary.with_columns(
-                        patient_index=pl.lit(patient_index)
+                plan_summaries.append(
+                    ds.plan_summary.with_columns(
+                        pl.lit(patient_index).alias("patient_index")
                     )
                 )
-            return pl.concat(plan_settings_summaries).select(
+            return pl.concat(plan_summaries).select(
                 [pl.col("patient_index"), pl.all().exclude("patient_index")]
             )
 
@@ -252,7 +199,7 @@ class RadixactDatasetCohort:
             telemetry_metrics = []
             for patient_index, dir in enumerate(self._df["path"]):
                 ds = RadixactDataset.from_path(dir)
-                if len(ds.telemetry_sinograms) > 0:
+                if len(ds._telemetry_sinograms) > 0:
                     telemetry_metrics.append(
                         ds.telemetry_metrics.with_columns(
                             patient_index=pl.lit(patient_index)
@@ -262,33 +209,92 @@ class RadixactDatasetCohort:
                 [pl.col("patient_index"), pl.all().exclude("patient_index")]
             )
 
-    # endregion
-
-    # region Public methods
-
-    def imaging_angles(self) -> np.ndarray:
-        """Extracts imaging angles from plan settings summaries for each patient.
+    @cached_property
+    def _combined_motion(self) -> RadixactSynchronyMotion:
+        """Returns concatenated motion data.
 
         Returns
         -------
-        np.ndarray
-            Array containing valid imaging angles.
+        RadixactSynchronyMotion
+            Concated Synchrony motion data from the cohort.
         """
-        result = (
-            self.plan_settings_summary.select(
-                [
-                    "imaging_angle_1",
-                    "imaging_angle_2",
-                    "imaging_angle_3",
-                    "imaging_angle_4",
-                    "imaging_angle_5",
-                    "imaging_angle_6",
-                ]
+        if len(self._df) == 0:
+            return None
+        else:
+            return RadixactSynchronyMotion.from_patient_motions(self._motions)
+
+    @cached_property
+    def _motions(self) -> list[RadixactSynchronyMotion]:
+        """Returns list of motions for patient cohort.
+
+        Returns
+        -------
+        list[RadixactSynchronyMotion]
+            List of encapsulated motions, one for each patient.
+
+        Note
+        ----
+        This method is slow. It requires parsing of as many XML files as there are
+        delivery sessions in the patient cohort.
+        """
+        motions = []
+        for dir in self._df["path"]:
+            ds = RadixactDataset.from_path(dir)
+            motions.append(ds._combined_motion)
+        return motions
+
+    @cached_property
+    def _plan_informations_summary(self) -> pl.DataFrame:
+        """Produce summary of treatment plan information, for all plans in the dataset.
+
+        Returns
+        -------
+        pl.DataFrame
+            DataFrame containing treatment plan information, for all plans in the
+            dataset.
+        """
+        if len(self._df) == 0:
+            return None
+        else:
+            plan_informations_summary = []
+            for patient_index, dir in enumerate(self._df["path"]):
+                ds = RadixactDataset.from_path(dir)
+                plan_informations_summary.append(
+                    ds._combined_plan_information_summary.with_columns(
+                        pl.lit(patient_index).alias("patient_index")
+                    )
+                )
+            return pl.concat(plan_informations_summary).select(
+                [pl.col("patient_index"), pl.all().exclude("patient_index")]
             )
-            .to_numpy()
-            .flatten()
-        )
-        return result[~np.isnan(result)]
+
+    @cached_property
+    def _plan_settings_summary(self) -> pl.DataFrame:
+        """Returns concatenated plan settings for patient cohort.
+
+        Returns
+        -------
+        pl.DataFrame
+            Concatenated plan settings for patient cohort.
+        """
+        if len(self._df) == 0:
+            return None
+        else:
+            plan_settings_summaries = []
+            for patient_index, dir in enumerate(self._df["path"]):
+                ds = RadixactDataset.from_path(dir)
+                plan_settings_summaries.append(
+                    ds._combined_plan_settings_summary.with_columns(
+                        pl.lit(patient_index).alias("patient_index")
+                    )
+                )
+            return pl.concat(plan_settings_summaries).select(
+                [pl.col("patient_index"), pl.all().exclude("patient_index")]
+            )
+
+    # endregion
+
+    # region Public methods
 
     def plot_correction_histogram(
         self,
@@ -343,7 +349,7 @@ class RadixactDatasetCohort:
         mpl.Figure
             Polar bar plot of radiographic imaging angles.
         """
-        imaging_angles = self.imaging_angles()
+        imaging_angles = self._imaging_angles()
         theta = np.linspace(0.0, 360, int(360 / width), endpoint=False)
         if width == 1:
             radii, _ = np.histogram(imaging_angles, 360, (0, 360))
@@ -401,7 +407,9 @@ class RadixactDatasetCohort:
         mpl.Figure
             Boxplot of values in each dimension.
         """
-        return self.motion.plot_motion_boxplot_sns(parameters, aspect, col_wrap, sharey)
+        return self._combined_motion.plot_motion_boxplot_sns(
+            parameters, aspect, col_wrap, sharey
+        )
 
     def plot_motion_histogram(
         self,
@@ -440,7 +448,7 @@ class RadixactDatasetCohort:
         mlp.Figure
             Histogram of target offset values in each dimension.
         """
-        return self.motion.plot_motion_histogram(
+        return self._combined_motion.plot_motion_histogram(
             mode, fig_size, offset_lim, offset_bin, vector_lim, vector_bin, title
         )
 
@@ -490,7 +498,7 @@ class RadixactDatasetCohort:
         mpl.Figure
             Histogram of target offset values in each dimension.
         """
-        return self.motion.plot_motion_histogram_sns(
+        return self._combined_motion.plot_motion_histogram_sns(
             parameters, binwidth, col_wrap, sharex, sharey
         )
 
@@ -524,7 +532,7 @@ class RadixactDatasetCohort:
         This figure is inspired by Figure 5(b) of Li et al. (2008), available at
         DOI:10.1016/j.ijrobp.2007.10.049.
         """
-        return self.motion.plot_patient_fraction_less_than_threshold(
+        return self._combined_motion.plot_patient_fraction_less_than_threshold(
             offset_type, threshold_step, figsize
         )
 
@@ -558,7 +566,7 @@ class RadixactDatasetCohort:
         This calculation is inspired by Figure 5(b) of Li et al. (2008), available at
         DOI:10.1016/j.ijrobp.2007.10.049.
         """
-        return self.motion.plot_session_fraction_less_than_threshold(
+        return self._combined_motion.plot_session_fraction_less_than_threshold(
             offset_type, threshold_step, figsize
         )
 
@@ -591,7 +599,7 @@ class RadixactDatasetCohort:
         This calculation is inspired by Figure 1 of Adamson et al. (2010), available at
         DOI:10.1016/j.ijrobp.2009.09.027.
         """
-        return self.motion.plot_target_offset_greater_than_threshold(
+        return self._combined_motion.plot_target_offset_greater_than_threshold(
             target_offset_type, aspect
         )
 
@@ -659,8 +667,36 @@ class RadixactDatasetCohort:
         This calculation is inspired by Figure 1 of Adamson et al. (2010), available at
         DOI:10.1016/j.ijrobp.2009.09.027.
         """
-        return self.motion.target_offset_greater_than_threshold(
+        return self._combined_motion.target_offset_greater_than_threshold(
             threshold_step, threshold_limit
         )
+
+    # region Private methods
+
+    def _imaging_angles(self) -> np.ndarray:
+        """Extracts imaging angles from plan settings summaries for each patient.
+
+        Returns
+        -------
+        np.ndarray
+            Array containing valid imaging angles.
+        """
+        _result = (
+            self._plan_settings_summary.select(
+                [
+                    "imaging_angle_1",
+                    "imaging_angle_2",
+                    "imaging_angle_3",
+                    "imaging_angle_4",
+                    "imaging_angle_5",
+                    "imaging_angle_6",
+                ]
+            )
+            .to_numpy()
+            .flatten()
+        )
+        return _result[~np.isnan(_result)]
+
+    # endregion
 
     # endregion
