@@ -733,6 +733,17 @@ class RadixactDataset:
             self.records_summary, parameters, binwidth, col_wrap, sharex, sharey
         )
 
+    def plot_leaf_adaptation(self, session_index: int) -> mpl.Figure:
+        plan_sinogram = self._find_matching_planned_sinogram(
+            self._telemetry_sinograms[session_index]
+        )
+        return RadixactSinogram.plot_leaf_adaptation(
+            plan_sinogram,
+            self._telemetry_sinograms[session_index],
+            self._telemetry_timings[session_index],
+            self._motions[session_index],
+        )
+
     def plot_motion_boxplot_sns(
         self,
         parameters: list[str] | None = None,
