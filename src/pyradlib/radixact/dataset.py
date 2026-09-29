@@ -15,6 +15,7 @@ __license__ = "GPL3"
 import glob
 import logging
 import os
+import re
 import shutil
 import xml.etree.ElementTree as et
 from functools import cached_property
@@ -140,9 +141,19 @@ class RadixactDataset:
         folder, e.g., containing DetectorByProj*.det, TelemFluence_*.dplan, and
         FinalDeliveryPlan*.dplan files.
         """
-        return cls.from_path_list(
-            sorted([os.path.join(path, filename) for filename in os.listdir(path)])
-        )
+        paths = [os.path.join(path, filename) for filename in os.listdir(path)]
+
+        # natural sorting, to ensure e.g., _2.dat is stored before _10.dat
+        def natsorted(paths):
+            def natsorted_key(path):
+                return [
+                    int(text) if text.isdigit() else text.lower()
+                    for text in re.split(r"(\d+)", path)
+                ]
+
+            return sorted(paths, key=natsorted_key)
+
+        return cls.from_path_list(natsorted(paths))
 
     @classmethod
     def from_path(cls, path: str | os.PathLike) -> RadixactDataset:
