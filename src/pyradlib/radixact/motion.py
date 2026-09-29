@@ -1197,6 +1197,15 @@ class RadixactSynchronyMotion:
     @staticmethod
     def _calculate_metrics(df: pl.DataFrame) -> pl.DataFrame:
         df_results = []
+        # Include datetime stamp
+        df_results.append(
+            df.select(
+                [
+                    pl.col("datetime").first().alias("datetime_start"),
+                    pl.col("datetime").last().alias("datetime_end"),
+                ]
+            )
+        )
         # Calculate duration (or skip, if motion contains multiple deliveries)
         if (
             len(df.select("delta_time").to_numpy())
