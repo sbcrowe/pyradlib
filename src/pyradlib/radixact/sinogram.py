@@ -989,6 +989,7 @@ class RadixactSinogram:
         interrupt_label: str = "Beam interrupt",
         interrupt_color: str = "brown",
         interrupt_shown: bool = True,
+        rasterized: bool = False,
         figsize=(12, 14),
     ):
         # TODO: assert agreement in # projections
@@ -1072,6 +1073,7 @@ class RadixactSinogram:
             aspect="auto",
             cmap=mpl.colormaps[planned_sinogram_colormap],
             interpolation="none",
+            rasterized=rasterized,
         )
         axs[0].set_ylabel("Leaf")
         axs[0].yaxis.set_major_locator(plt.MultipleLocator(multiple_locator_divisor))
@@ -1100,6 +1102,7 @@ class RadixactSinogram:
             label="Beam's eye view",
             linewidth=1.5,
             zorder=4,
+            rasterized=rasterized,
         )
         axs[1].plot(
             optimal_sinogram._df["projection"],
@@ -1108,6 +1111,7 @@ class RadixactSinogram:
             label="IEC-X (left-right)",
             linewidth=1,
             zorder=3,
+            rasterized=rasterized,
         )
         axs[1].plot(
             optimal_sinogram._df["projection"],
@@ -1116,6 +1120,7 @@ class RadixactSinogram:
             label="IEC-Y (superior-inferior)",
             linewidth=1,
             zorder=2,
+            rasterized=rasterized,
         )
         axs[1].plot(
             optimal_sinogram._df["projection"],
@@ -1124,8 +1129,9 @@ class RadixactSinogram:
             label="IEC-Z (anterior-posterior)",
             linewidth=1,
             zorder=1,
+            rasterized=rasterized,
         )
-        axs[1].legend(loc="lower center", ncol=4)
+        axs[1].legend(loc="lower center", ncol=5)
         axs[1].sharex(axs[0])
         axs[1].set_ylabel("Target offset (mm)")
         secax1 = axs[1].secondary_xaxis(
@@ -1154,6 +1160,7 @@ class RadixactSinogram:
             linewidth=1.5,
             where="post",
             zorder=3,
+            rasterized=rasterized,
         )
         axs[2].step(
             upsampled_sinogram._df["projection"],
@@ -1163,6 +1170,7 @@ class RadixactSinogram:
             linewidth=1.5,
             where="mid",
             zorder=2,
+            rasterized=rasterized,
         )
         axs[2].fill_between(
             plan_sinogram._df["projection"],
@@ -1171,6 +1179,7 @@ class RadixactSinogram:
             step="post",
             label=observed_adaptation_label,
             zorder=1,
+            rasterized=rasterized,
         )
         adaptation_ylim = (
             round(max(np.abs(optimal_sinogram._df["leaf_shift"].to_list()))) + 1
@@ -1185,13 +1194,10 @@ class RadixactSinogram:
                 alpha=closed_leaf_alpha,
                 color=closed_leaf_color,
                 label=closed_leaf_label,
+                rasterized=rasterized,
             )
         adaptation_ticks = range(-adaptation_ylim, adaptation_ylim + 1)
-        if len(interrupts) > 0:
-            adaptation_ncol = 4
-        else:
-            adaptation_ncol = 3
-        axs[2].legend(loc="lower center", ncol=adaptation_ncol)
+        axs[2].legend(loc="lower center", ncol=5)
         axs[2].set_xlim(proj_limit_lower, proj_limit_upper)
         axs[2].set_ylabel("Leaf adaptation")
         axs[2].set_ylim(-adaptation_ylim, adaptation_ylim)
@@ -1217,6 +1223,7 @@ class RadixactSinogram:
             aspect="auto",
             cmap=mpl.colormaps[planned_sinogram_colormap],
             interpolation="none",
+            rasterized=rasterized,
         )
         expected_row_mask = (
             np.abs(planned_im_data - expected_im_data) < error_threshold
@@ -1240,6 +1247,7 @@ class RadixactSinogram:
             aspect="auto",
             cmap=mpl.colormaps[expected_sinogram_colormap],
             interpolation="none",
+            rasterized=rasterized,
         )
         expected_handles = [
             mpatches.Patch(
@@ -1255,7 +1263,7 @@ class RadixactSinogram:
         axs[3].set_ylabel("Leaf")
         axs[3].yaxis.set_major_locator(plt.MultipleLocator(multiple_locator_divisor))
         axs[3].legend(
-            loc="lower center", handles=expected_handles, labels=expected_labels, ncol=4
+            loc="lower center", handles=expected_handles, labels=expected_labels, ncol=5
         )
         expected_variations = 1 - np.sum(expected_row_mask) / len(expected_row_mask)
         axs[3].text(
@@ -1288,6 +1296,7 @@ class RadixactSinogram:
             aspect="auto",
             cmap=mpl.colormaps[planned_sinogram_colormap],
             interpolation="none",
+            rasterized=rasterized,
         )
         telemetry_row_mask = (
             np.abs(planned_im_data - telemetry_im_data) < error_threshold
@@ -1313,6 +1322,7 @@ class RadixactSinogram:
             aspect="auto",
             cmap=mpl.colormaps[telemetry_sinogram_colormap],
             interpolation="none",
+            rasterized=rasterized,
         )
         handles = [
             mpatches.Patch(
@@ -1350,6 +1360,7 @@ class RadixactSinogram:
             aspect="auto",
             cmap=mpl.colormaps[erroneous_sinogram_colormap],
             interpolation="none",
+            rasterized=rasterized,
         )
         if not erroneous_row_mask.all():
             handles.append(
@@ -1367,13 +1378,14 @@ class RadixactSinogram:
                     ymax=leaf_limit_upper,
                     color=interrupt_color,
                     label=interrupt_label,
+                    rasterized=rasterized,
                 )
                 handle, label = axs[4].get_legend_handles_labels()
                 handles.append(handle[0])
                 labels.append(label[0])
         axs[4].set_ylabel("Leaf")
         axs[4].yaxis.set_major_locator(plt.MultipleLocator(multiple_locator_divisor))
-        axs[4].legend(loc="lower center", handles=handles, labels=labels, ncol=3)
+        axs[4].legend(loc="lower center", handles=handles, labels=labels, ncol=5)
         telemetry_variations = 1 - np.sum(telemetry_row_mask) / len(telemetry_row_mask)
         axs[4].text(
             1,
@@ -1401,6 +1413,7 @@ class RadixactSinogram:
             label="Planned sinogram",
             linewidth=1.5,
             where="mid",
+            rasterized=rasterized,
         )
         axs[5].step(
             plan_sinogram._df["projection"],
@@ -1409,6 +1422,7 @@ class RadixactSinogram:
             label="Telemetry sinogram",
             linewidth=1.5,
             where="mid",
+            rasterized=rasterized,
         )
         total_lot_ylim = (
             int(
@@ -1431,6 +1445,7 @@ class RadixactSinogram:
                 alpha=closed_leaf_alpha,
                 color=closed_leaf_color,
                 label=closed_leaf_label,
+                rasterized=rasterized,
             )
         if True in variation:
             axs[5].fill_between(
@@ -1441,6 +1456,7 @@ class RadixactSinogram:
                 step="post",
                 color=mpl.colormaps[erroneous_sinogram_colormap](0.1),
                 label="Erroneous variation",
+                rasterized=rasterized,
             )
         axs[5].set_ylim(0, total_lot_ylim)
         axs[5].set_ylabel("Total leaf open time")
@@ -1459,6 +1475,7 @@ class RadixactSinogram:
                     color=interrupt_color,
                     label=interrupt_label,
                     linewidth=1.5,
+                    rasterized=rasterized,
                 )
         axs[5].legend(loc="lower center", ncol=5)
         # Return figure
