@@ -1455,7 +1455,7 @@ class RadixactSinogram:
                 where=variation,
                 step="post",
                 color=mpl.colormaps[erroneous_sinogram_colormap](0.1),
-                label="Erroneous variation",
+                label="Erroneous sinogram variation",
                 rasterized=rasterized,
             )
         axs[5].set_ylim(0, total_lot_ylim)
