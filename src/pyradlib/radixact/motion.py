@@ -27,6 +27,8 @@ import numpy.typing as npt
 import polars as pl
 import seaborn as sns
 
+from pyradlib.radixact.timing import RadixactTiming
+
 logger = logging.getLogger(__name__)
 
 
@@ -456,6 +458,41 @@ class RadixactSynchronyMotion:
     # endregion
 
     # region Public methods
+
+    def apply_timing(self, timing: RadixactTiming) -> RadixactSynchronyMotion:
+        start_stop_datetimes_array = timing.start_stop_datetimes_array()
+        # crop to beam start and stop times
+        df = pl.concat(
+            [
+                self.df.filter(
+                    pl.col("datetime").is_between(
+                        start_stop_datetimes[0], start_stop_datetimes[1]
+                    )
+                )
+                for start_stop_datetimes in start_stop_datetimes_array
+            ]
+        )
+        # add tau values
+        df = df.with_columns(
+            tau=pl.Series(
+                np.interp(
+                    x=df["timestamp"],
+                    xp=timing._df["timestamp"] / 1000,
+                    fp=timing._df["tau"],
+                )
+            )
+        )
+        # add gantry angles
+        df = df.with_columns(
+            gantry_angle=pl.Series(((df["tau"] % 51) * (360 / 51) - (180 / 51)) % 360)
+        )
+        # add BEV offset
+        df = df.with_columns(
+            target_offset_beams_eye_view=np.cos(np.deg2rad(df["gantry_angle"]))
+            * df["target_offset_x"]
+            - np.sin(np.deg2rad(df["gantry_angle"])) * df["target_offset_z"]
+        )
+        return type(self)(df)
 
     def patient_fraction_less_than_threshold(
         self, offset_type: str = "target_offset_vector", threshold_step: float = 1
