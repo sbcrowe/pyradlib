@@ -15,6 +15,7 @@ import os
 from functools import cached_property
 
 import numpy as np
+import numpy.typing as npt
 import polars as pl
 
 
@@ -145,5 +146,29 @@ class RadixactTiming:
             result["total_duration"] - result["treatment_duration"]
         )
         return pl.DataFrame(result)
+
+    # endregion
+
+    # region Public methods
+
+    def start_stop_datetimes_array(self) -> npt.ArrayLike:
+        """Return a structured 2D array with beam start and stop datetimes.
+
+        Returns
+        -------
+        npt.ArrayLike
+            2D array of beam start and stop datetimes.
+        """
+        return self._df["datetime"].to_numpy().reshape(-1, 2)
+
+    def start_stop_timestamp_array(self) -> npt.ArrayLike:
+        """Return a structured 2D array with beam start and stop timestamps.
+
+        Returns
+        -------
+        npt.ArrayLike
+            2D array of beam start and stop timestamps, in μs.
+        """
+        return self._df["timestamp"].to_numpy().reshape(-1, 2)
 
     # endregion
