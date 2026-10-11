@@ -184,6 +184,8 @@ class RadixactSynchronyMotion:
             df = pl.DataFrame(dict(npz_data))
             df = cls._calculate_additional_offsets(df)
             df = cls._calculate_additional_times(df)
+            if "tau" in df:
+                df = cls._calculate_gantry_and_bev_offset(df)
             return cls(df)
 
     @classmethod
@@ -324,6 +326,43 @@ class RadixactSynchronyMotion:
         )
         return cls(df_cleaned)
 
+    @classmethod
+    def from_xml_and_dat(
+        cls, xml_path: str | os.PathLike, dat_path: str | os.PathLike
+    ) -> RadixactSynchronyMotion:
+        """Extracts motion data during treatment delivery data from *motionData.xml
+        file representing a patient treatment fraction fragment, taken from a
+        Delivery Analysis cache or Patient Data Extractor archive and telemetry
+        timing data file, with gantry angle and beams'eye view target offset.
+
+        Parameters
+        ----------
+        xml_path : str | os.PathLike
+            Path to XML file containing motion data.
+        dat_path : str | os.PathLike
+            Path to dat file containing telemetry timing data.
+
+        Returns
+        -------
+        RadixactSynchronyMotion
+            The Radixact Synchrony motion data encapsulated with helper functions.
+
+        Notes
+        -----
+        Motion data are included in Patient Data Extractor archives, though are renamed
+        using tokens described within the PatientExportDataBO.xml file. These files are
+        also cached as C:/tomo/da/pts/URnumber/*motionData.xml when patient data is
+        loaded within the Delivery Analysis tool. There may be multiple files per
+        fraction.
+
+        This function has only been validated for version 3 MotionData.xml files.
+
+        Pauses in fractions (e.g. due to user, Synchrony, or system errors) will be
+        indicated by numpy.nan. This allows more accurate plotting of the data using
+        matplotlib.
+        """
+        return cls.from_xml(xml_path).apply_timing(RadixactTiming.from_dat(dat_path))
+
     # endregion
 
     # region Magic methods
@@ -460,11 +499,27 @@ class RadixactSynchronyMotion:
     # region Public methods
 
     def apply_timing(self, timing: RadixactTiming) -> RadixactSynchronyMotion:
+        """Returns Synchrony motion data during treatment delivery, from each
+        delivery session in the dataset, with telemetry timing data applied
+        for gantry angle and beam's eye view target offset.
+
+        Parameters
+        ----------
+        timing : RadixactTiming
+            Telemetry timing data corresponding to the Synchrony motion data.
+
+        Returns
+        -------
+        RadixactSynchronyMotion
+            Synchrony motion data during treatment delivery, from each delivery
+            session in the dataset, with telemetry timing data applied for gantry
+            angle and beam's eye view target offset.
+        """
         start_stop_datetimes_array = timing.start_stop_datetimes_array()
         # crop to beam start and stop times
         df = pl.concat(
             [
-                self.df.filter(
+                self._df.filter(
                     pl.col("datetime").is_between(
                         start_stop_datetimes[0], start_stop_datetimes[1]
                     )
@@ -483,15 +538,7 @@ class RadixactSynchronyMotion:
             )
         )
         # add gantry angles
-        df = df.with_columns(
-            gantry_angle=pl.Series(((df["tau"] % 51) * (360 / 51) - (180 / 51)) % 360)
-        )
-        # add BEV offset
-        df = df.with_columns(
-            target_offset_beams_eye_view=np.cos(np.deg2rad(df["gantry_angle"]))
-            * df["target_offset_x"]
-            - np.sin(np.deg2rad(df["gantry_angle"])) * df["target_offset_z"]
-        )
+        df = self._calculate_gantry_and_bev_offset(df)
         return type(self)(df)
 
     def patient_fraction_less_than_threshold(
@@ -1128,6 +1175,7 @@ class RadixactSynchronyMotion:
         else:
             data_dict["delta_time"] = self._df["delta_time"].to_numpy()
         for col in [
+            "tau",
             "target_offset_x",
             "target_offset_y",
             "target_offset_z",
@@ -1174,7 +1222,7 @@ class RadixactSynchronyMotion:
         pl.DataFrame
             DataFrame containing vector and delta offset values.
         """
-        result_df = df.with_columns(
+        return df.with_columns(
             ((pl.col("target_offset_x") ** 2) + (pl.col("target_offset_z") ** 2))
             .sqrt()
             .alias("target_offset_xz"),
@@ -1194,8 +1242,7 @@ class RadixactSynchronyMotion:
             (pl.col("target_offset_z") - pl.col("target_offset_z").first()).alias(
                 "delta_target_offset_z"
             ),
-        )
-        result_df = result_df.with_columns(
+        ).with_columns(
             (
                 (pl.col("delta_target_offset_x") ** 2)
                 + (pl.col("delta_target_offset_y") ** 2)
@@ -1204,7 +1251,6 @@ class RadixactSynchronyMotion:
             .sqrt()
             .alias("delta_target_offset_vector")
         )
-        return result_df
 
     @staticmethod
     def _calculate_additional_times(df: pl.DataFrame) -> pl.DataFrame:
@@ -1220,16 +1266,50 @@ class RadixactSynchronyMotion:
         pl.DataFrame
             DataFrame containing delta time and datetimes.
         """
-        result_df = df
-        result_df = result_df.with_columns(
+        return df.with_columns(
             ((pl.col("timestamp") - pl.col("timestamp").first()) / 1000).alias(
                 "delta_time"
             )
+        ).with_columns(pl.from_epoch("timestamp", time_unit="ms").alias("datetime"))
+
+    @staticmethod
+    def _calculate_gantry_and_bev_offset(df: pl.DataFrame) -> pl.DataFrame:
+        """Calculates gantry angle and lateral beam's eye view target offset.
+
+        Parameters
+        ----------
+        df : pl.DataFrame
+            DataFrame containing tau, and IEC-X and IEC-Z target offset values.
+
+        Returns
+        -------
+        pl.DataFrame
+            DataFrame containing gantry angle and beam's eye view target offset.
+        """
+        return (
+            df.with_columns(
+                (((pl.col("tau") % 51) * (360 / 51) - (180 / 51)) % 360).alias(
+                    "gantry_angle"
+                )
+            )
+            .with_columns(
+                (
+                    pl.col("gantry_angle").radians().cos() * pl.col("target_offset_x")
+                    - pl.col("gantry_angle").radians().sin() * pl.col("target_offset_z")
+                ).alias("target_offset_lateral_bev")
+            )
+            .with_columns(
+                (
+                    pl.col("target_offset_lateral_bev")
+                    - (
+                        (pl.col("target_offset_lateral_bev") / 6.25).round(
+                            0, mode="half_away_from_zero"
+                        )
+                        * 6.25
+                    )
+                ).alias("target_offset_lateral_residual")
+            )
         )
-        result_df = result_df.with_columns(
-            pl.from_epoch("timestamp", time_unit="ms").alias("datetime")
-        )
-        return result_df
 
     @staticmethod
     def _calculate_metrics(df: pl.DataFrame) -> pl.DataFrame:
@@ -1296,6 +1376,8 @@ class RadixactSynchronyMotion:
             series
             for series in [
                 "target_offset_vector",
+                "target_offset_lateral_bev",
+                "target_offset_lateral_residual",
                 "delta_target_offset_vector",
                 "potential_diff",
                 "rigid_body",

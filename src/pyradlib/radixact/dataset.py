@@ -221,6 +221,10 @@ class RadixactDataset:
         return self._combined_motion.metrics
 
     @cached_property
+    def motion_metrics_with_timing(self) -> pl.DataFrame:
+        return self._combined_motion_with_timing.metrics
+
+    @cached_property
     def plan_summary(self) -> pl.DataFrame:
         """Produce summary of treatment plan parameters, for all plans in the dataset.
 
@@ -323,6 +327,22 @@ class RadixactDataset:
             return None
         else:
             return RadixactSynchronyMotion.from_session_motions(self._motions)
+
+    @cached_property
+    def _combined_motion_with_timing(self) -> RadixactSynchronyMotion | None:
+        """Returns concatenated motion data.
+
+        Returns
+        -------
+        RadixactSynchronyMotion | None
+            Concated Synchrony motion data from the dataset.
+        """
+        if len(self._motions_with_timing) == 0:
+            return None
+        else:
+            return RadixactSynchronyMotion.from_session_motions(
+                self._motions_with_timing
+            )
 
     @cached_property
     def _combined_plan_details_summary(self) -> pl.DataFrame:
@@ -484,6 +504,31 @@ class RadixactDataset:
                     motions.append(motion)
             logger.info(f"Loaded {len(motions)} motion data files")
             return motions
+
+    @cached_property
+    def _motions_with_timing(self) -> list[RadixactSynchronyMotion]:
+        """Returns list containing motion data during treatment delivery, with
+        telemetry timing data applied for gantry angle and beam's eye view
+        target offset.
+
+        Returns
+        -------
+        list[RadixactSynchronyMotion]
+            List of Synchrony motion data during treatment delivery, from each
+            delivery session in the dataset, with telemetry timing data applied
+            for gantry angle and beam's eye view target offset.
+        """
+        if len(self._motions) != len(self._telemetry_timings):
+            logger.debug(
+                f"Dataset contains {len(self._motions)} motions "
+                + f"and {len(self._telemetry_timings)} timings."
+            )
+            return []
+        else:
+            return [
+                motion.apply_timing(timing)
+                for motion, timing in zip(self._motions, self._telemetry_timings)
+            ]
 
     @cached_property
     def _plan_details(self) -> list[RadixactPlanDetails]:
