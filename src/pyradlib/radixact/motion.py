@@ -1299,6 +1299,11 @@ class RadixactSynchronyMotion:
                 ).alias("target_offset_lateral_bev")
             )
             .with_columns(
+                pl.col("target_offset_lateral_bev")
+                .abs()
+                .alias("target_offset_lateral_bev_vector")
+            )
+            .with_columns(
                 (
                     pl.col("target_offset_lateral_bev")
                     - (
@@ -1308,6 +1313,11 @@ class RadixactSynchronyMotion:
                         * 6.25
                     )
                 ).alias("target_offset_lateral_residual")
+            )
+            .with_columns(
+                pl.col("target_offset_lateral_residual")
+                .abs()
+                .alias("target_offset_lateral_residual_vector")
             )
         )
 
@@ -1371,13 +1381,39 @@ class RadixactSynchronyMotion:
                     ]
                 )
             )
+        # Calculate beam's eye view metrics
+        for col in [
+            series
+            for series in [
+                "target_offset_lateral_bev",
+                "target_offset_lateral_residual",
+            ]
+            if series in df.columns
+        ]:
+            df_results.append(
+                df.select(
+                    [
+                        pl.col(col).mean().alias("mean_" + col),
+                        pl.col(col).std().alias("standard_deviation_" + col),
+                        pl.col(col).median().alias("median_" + col),
+                        (pl.col(col).quantile(0.75) - pl.col(col).quantile(0.25)).alias(
+                            "interquartile_range_" + col
+                        ),
+                        (pl.col(col).quantile(0.9) - pl.col(col).quantile(0.1)).alias(
+                            "interdecile_range_" + col
+                        ),
+                        (pl.col(col).quantile(0.95) - pl.col(col).quantile(0.05)).alias(
+                            "5pc_trimmed_range_" + col
+                        ),
+                        (pl.col(col).max() - pl.col(col).min()).alias("range_" + col),
+                    ]
+                )
+            )
         # Calculate vector displacement and tracking metrics
         for col in [
             series
             for series in [
                 "target_offset_vector",
-                "target_offset_lateral_bev",
-                "target_offset_lateral_residual",
                 "delta_target_offset_vector",
                 "potential_diff",
                 "rigid_body",
