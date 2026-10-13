@@ -537,6 +537,10 @@ class RadixactSynchronyMotion:
                 )
             )
         )
+        # TODO Rezero motion
+        df = df.with_columns(
+            pl.col("delta_time").sub(pl.col("delta_time").first()).alias("delta_time")
+        )
         # add gantry angles
         df = self._calculate_gantry_and_bev_offset(df)
         return type(self)(df)
