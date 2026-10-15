@@ -1473,6 +1473,36 @@ class RadixactSynchronyMotion:
                 ]
             )
         )
+        if "target_offset_lateral_bev" in df.columns:
+            df_results.append(
+                df.select(
+                    [
+                        (
+                            (pl.col("target_offset_lateral_bev").abs() > 3.125).sum()
+                            / pl.col("delta_time").count()
+                        ).alias("fraction_target_offset_lateral_bev_exceeding_3.125"),
+                        (
+                            (pl.col("target_offset_lateral_bev").abs() > 4).sum()
+                            / pl.col("delta_time").count()
+                        ).alias("fraction_target_offset_lateral_bev_exceeding_4"),
+                    ]
+                )
+            )
+        if "target_offset_lateral_residual" in df.columns:
+            df_results.append(
+                df.select(
+                    [
+                        (
+                            (pl.col("target_offset_lateral_residual").abs() > 1).sum()
+                            / pl.col("delta_time").count()
+                        ).alias("fraction_target_offset_lateral_residual_exceeding_1"),
+                        (
+                            (pl.col("target_offset_lateral_residual").abs() > 2).sum()
+                            / pl.col("delta_time").count()
+                        ).alias("fraction_target_offset_lateral_residual_exceeding_2"),
+                    ]
+                )
+            )
         # Return combined calculated metrics
         return pl.concat(df_results, how="horizontal")
 
