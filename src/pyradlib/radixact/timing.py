@@ -34,7 +34,23 @@ class RadixactTiming:
         RadixactTiming
             DataFrame encapsulated with helper functions.
         """
-        self._df = df
+        self._df = df.fill_nan(None)
+
+    def from_csv(cls, path: str | os.PathLike) -> RadixactTiming:
+        """Reads telemetry timing from a .csv file.
+
+        Parameters
+        ----------
+        path : str | os.PathLike
+            Path to the .csv file.
+
+        Returns
+        -------
+        RadixactTiming
+            The csv file is returned as a DataFrame encapsulated with helper functions.
+        """
+        data = pl.read_csv(path, try_parse_dates=True)
+        return cls(data)
 
     @classmethod
     def from_dat(cls, path: str | os.PathLike) -> RadixactTiming:
@@ -108,6 +124,43 @@ class RadixactTiming:
         )
         return cls(data)
 
+    def from_parquet(cls, path: str | os.PathLike) -> RadixactTiming:
+        """Reads telemetry timing from a .parquet file.
+
+        Parameters
+        ----------
+        path : str | os.PathLike
+            Path to the .parquet file.
+
+        Returns
+        -------
+        RadixactTiming
+            The parquet file is returned as a DataFrame encapsulated with helper functions.
+        """
+        data = pl.read_parquet(path)
+        return cls(data)
+
+    def from_path(cls, path: str | os.PathLike) -> RadixactTiming:
+        """Reads telemetry timing from a file, attempting to identify the file
+        format by the path extension.
+
+        Parameters
+        ----------
+        path : str | os.PathLike
+            Path to the file.
+
+        Returns
+        -------
+        RadixactTiming
+            The file is returned as a DataFrame encapsulated with helper functions.
+        """
+        if path.endswith(".csv"):
+            return cls.from_csv(path)
+        elif path.endswith(".dat"):
+            return cls.from_dat(path)
+        elif path.endswith(".parquet"):
+            return cls.from_parquet(path)
+
     # endregion
 
     # region Magic methods
@@ -170,5 +223,25 @@ class RadixactTiming:
             2D array of beam start and stop timestamps, in μs.
         """
         return self._df["timestamp"].to_numpy().reshape(-1, 2)
+
+    def to_csv(self, path: str | os.PathLike) -> None:
+        """Writes telemetry data to CSV file.
+
+        Parameters
+        ----------
+        path : str | os.PathLike
+            Path for CSV file to be written.
+        """
+        self._df.write_csv(path)
+
+    def to_parquet(self, path: str | os.PathLike) -> None:
+        """Writes telemetry data to parquet file.
+
+        Parameters
+        ----------
+        path : str | os.PathLike
+            Path for the parquet file to be written.
+        """
+        self._df.write_parquet(path)
 
     # endregion
