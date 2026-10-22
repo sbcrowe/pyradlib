@@ -49,7 +49,7 @@ class RadixactSynchronyMotion:
         RadixactSynchronyMotion
             The Radixact Synchrony motion data encapsulated with helper functions.
         """
-        self._df = df
+        self._df = df.fill_nan(None)
 
     @classmethod
     def from_array_likes(
@@ -204,6 +204,27 @@ class RadixactSynchronyMotion:
         """
         df = pl.read_parquet(path)
         return cls(df)
+
+    @classmethod
+    def from_path(cls, path: str | os.PathLike) -> RadixactSynchronyMotion:
+        """Reads motion from file, with file format identified by path extension.
+
+        Parameters
+        ----------
+        path : str | os.PathLike
+            Path to file.
+
+        Returns
+        -------
+        RadixactSynchronyMotion
+            The Radixact Synchrony motion data encapsulated with helper functions.
+        """
+        if path.endswith(".npz"):
+            return cls.from_npz(path)
+        elif path.endswith(".parquet"):
+            return cls.from_parquet(path)
+        elif path.endswith(".xml"):
+            return cls.from_xml(path)
 
     @classmethod
     def from_patient_motions(
