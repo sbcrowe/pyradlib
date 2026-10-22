@@ -36,7 +36,7 @@ class RadixactPlanInformation:
         RadixactPlanInformation
             Plan information data, in helper wrapper.
         """
-        self._df: pl.DataFrame = df
+        self._df: pl.DataFrame = df.fill_nan(None)
 
     @classmethod
     def from_xml(cls, path: str | os.PathLike) -> RadixactPlanInformation:

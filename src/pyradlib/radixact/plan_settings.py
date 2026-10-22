@@ -33,7 +33,7 @@ class RadixactPlanSettings:
         RadixactPlanSettings
             Plan settings encapsulated in helping wrapper.
         """
-        self._df: pl.DataFrame = df
+        self._df: pl.DataFrame = df.fill_nan(None)
 
     @classmethod
     def from_plan_settings(cls, path: str | os.PathLike) -> RadixactPlanSettings:

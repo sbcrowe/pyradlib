@@ -41,7 +41,7 @@ class RadixactSinogram:
             DataFrame containing projections, and optionally, gantry angles,
             datetimes, leaf open times, and detector channel signal data.
         """
-        self._df: pl.DataFrame = data
+        self._df: pl.DataFrame = data.fill_nan(None)
 
     @classmethod
     def from_bin(cls, path: str | os.PathLike) -> RadixactSinogram:
