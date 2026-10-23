@@ -32,39 +32,39 @@ class RadixactTiming:
         Returns
         -------
         RadixactTiming
-            DataFrame encapsulated with helper functions.
+            The timing data as a DataFrame encapsulated with helper functions.
         """
         self._df = df.fill_nan(None)
 
     def from_csv(cls, path: str | os.PathLike) -> RadixactTiming:
-        """Reads telemetry timing from a .csv file.
+        """Reads telemetry timing from a CSV file.
 
         Parameters
         ----------
         path : str | os.PathLike
-            Path to the .csv file.
+            Path to the CSV file.
 
         Returns
         -------
         RadixactTiming
-            The csv file is returned as a DataFrame encapsulated with helper functions.
+            The timing data as a DataFrame encapsulated with helper functions.
         """
         data = pl.read_csv(path, try_parse_dates=True)
         return cls(data)
 
     @classmethod
     def from_dat(cls, path: str | os.PathLike) -> RadixactTiming:
-        """Reads telemetry timing from a .dat file.
+        """Reads telemetry timing from a dat file.
 
         Parameters
         ----------
         path : str | os.PathLike
-            Path to the .dat file.
+            Path to the dat file.
 
         Returns
         -------
         RadixactTiming
-            The dat file is returned as a DataFrame encapsulated with helper functions.
+            The timing data as a DataFrame encapsulated with helper functions.
         """
         with open(path) as timing_path_text_file:
             timing_text = timing_path_text_file.read()
@@ -125,17 +125,17 @@ class RadixactTiming:
         return cls(data)
 
     def from_parquet(cls, path: str | os.PathLike) -> RadixactTiming:
-        """Reads telemetry timing from a .parquet file.
+        """Reads telemetry timing from a Parquet file.
 
         Parameters
         ----------
         path : str | os.PathLike
-            Path to the .parquet file.
+            Path to the Parquet file.
 
         Returns
         -------
         RadixactTiming
-            The parquet file is returned as a DataFrame encapsulated with helper functions.
+            The timing data as a DataFrame encapsulated with helper functions.
         """
         data = pl.read_parquet(path)
         return cls(data)
@@ -152,7 +152,7 @@ class RadixactTiming:
         Returns
         -------
         RadixactTiming
-            The file is returned as a DataFrame encapsulated with helper functions.
+            The timing data as a DataFrame encapsulated with helper functions.
         """
         if path.endswith(".csv"):
             return cls.from_csv(path)
@@ -160,10 +160,24 @@ class RadixactTiming:
             return cls.from_dat(path)
         elif path.endswith(".parquet"):
             return cls.from_parquet(path)
+        else:
+            raise ValueError(
+                f"Unsupported extension for RadixactTiming: {path.split('.')[-1]}"
+            )
 
     # endregion
 
     # region Magic methods
+
+    def __len__(self) -> int:
+        """Returns number of beam start and stop datetimes.
+
+        Returns
+        -------
+        int
+            Number of beam start and stop datetimes.
+        """
+        return len(self._df)
 
     def __repr__(self) -> str:
         """Returns an unambigious string representation of the object.
@@ -173,7 +187,9 @@ class RadixactTiming:
         str
             Representation of the object.
         """
-        return f"RadixactTiming(start={self._df['datetime'][0]})"
+        return self._df.__repr__()
+
+    # endregion
 
     # region Properties
 
@@ -225,7 +241,7 @@ class RadixactTiming:
         return self._df["timestamp"].to_numpy().reshape(-1, 2)
 
     def to_csv(self, path: str | os.PathLike) -> None:
-        """Writes telemetry data to CSV file.
+        """Writes timing dataframe to CSV file.
 
         Parameters
         ----------
@@ -235,13 +251,30 @@ class RadixactTiming:
         self._df.write_csv(path)
 
     def to_parquet(self, path: str | os.PathLike) -> None:
-        """Writes telemetry data to parquet file.
+        """Writes timing dataframe to Parquet file.
 
         Parameters
         ----------
         path : str | os.PathLike
-            Path for the parquet file to be written.
+            Path for the Parquet file to be written.
         """
         self._df.write_parquet(path)
+
+    def to_path(self, path: str | os.PathLike) -> None:
+        """Writes timing dataframe to file. Type of file identified by extension.
+
+        Parameters
+        ----------
+        path : str | os.PathLike
+            Path of the file to be written.
+        """
+        if path.endswith(".csv"):
+            self.to_csv(path)
+        elif path.endswith(".parquet"):
+            self.to_parquet(path)
+        else:
+            raise ValueError(
+                f"Unsupported extension for RadixactTiming: {path.split('.')[-1]}"
+            )
 
     # endregion

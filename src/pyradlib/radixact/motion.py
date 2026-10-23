@@ -119,20 +119,21 @@ class RadixactSynchronyMotion:
         return cls(df)
 
     @classmethod
-    def from_compressed(cls, path: str | os.PathLike) -> RadixactSynchronyMotion:
-        """Reads motion data stored in numpy npz file.
+    def from_csv(cls, path: str | os.PathLike) -> RadixactSynchronyMotion:
+        """Reads motion data stored in CSV file.
 
         Parameters
         ----------
         path : str | os.PathLike
-            Path to the npz file containing motion data.
+            Path to CSV file containing motion data.
 
         Returns
         -------
         RadixactSynchronyMotion
             The Radixact Synchrony motion data encapsulated with helper functions.
         """
-        return cls.from_npz(path)
+        df = pl.read_csv(path, try_parse_dates=True)
+        return cls(df)
 
     @classmethod
     def from_motion_extractor_csv(
@@ -219,12 +220,18 @@ class RadixactSynchronyMotion:
         RadixactSynchronyMotion
             The Radixact Synchrony motion data encapsulated with helper functions.
         """
-        if path.endswith(".npz"):
+        if path.endswith(".csv"):
+            return cls.from_csv(path)
+        elif path.endswith(".npz"):
             return cls.from_npz(path)
         elif path.endswith(".parquet"):
             return cls.from_parquet(path)
         elif path.endswith(".xml"):
             return cls.from_xml(path)
+        else:
+            raise ValueError(
+                f"Unsupported extension for RadixactTiming: {path.split('.')[-1]}"
+            )
 
     @classmethod
     def from_patient_motions(
@@ -1160,16 +1167,6 @@ class RadixactSynchronyMotion:
             .sort("threshold")
         )
 
-    def to_compressed(self, path: str | os.PathLike) -> None:
-        """Writes motion data to compressed npz file.
-
-        Parameters
-        ----------
-        path : str | os.PathLike
-            Path for npz file to be written.
-        """
-        self.to_npz(path)
-
     def to_csv(self, path: str | os.PathLike) -> None:
         """Writes motion data to CSV file.
 
@@ -1224,6 +1221,25 @@ class RadixactSynchronyMotion:
             Path for parquet file to be written.
         """
         self._df.write_parquet(path)
+
+    def to_path(self, path: str | os.PathLike) -> None:
+        """Writes motion data to file. Type of file identified by extension.
+
+        Parameters
+        ----------
+        path : str | os.PathLike
+            Path of the file to be written.
+        """
+        if path.endswith(".csv"):
+            self.to_csv(path)
+        elif path.endswith(".npz"):
+            self.to_npz(path)
+        elif path.endswith(".parquet"):
+            self.to_parquet(path)
+        else:
+            raise ValueError(
+                f"Unsupported extension for RadixactTiming: {path.split('.')[-1]}"
+            )
 
     # endregion
 

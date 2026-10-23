@@ -32,23 +32,85 @@ class RadixactPlanDetails:
         Returns
         -------
         RadixactPlanDetails
-            Plan details in helper wrapper.
+            The plan details as a DataFrame encapsulated with helper functions.
         """
-        self._df : pl.DataFrame = df.fill_nan(None)
+        self._df: pl.DataFrame = df.fill_nan(None)
 
     @classmethod
-    def from_xml(cls, path: str | os.PathLike) -> RadixactPlanDetails:
-        """Read plan details from an XML file.
+    def from_csv(cls, path: str | os.PathLike) -> RadixactPlanDetails:
+        """Read plan details from CSV file.
 
         Parameters
         ----------
         path : str | os.PathLike
-            Path to the plan detail xml file.
+            Path to the plan detail CSV file.
 
         Returns
         -------
         RadixactPlanDetails
-            Plan details in helper wrapper.
+            The plan details as a DataFrame encapsulated with helper functions.
+        """
+        return cls(pl.read_csv(path))
+
+    @classmethod
+    def from_path(cls, path: str | os.PathLike) -> RadixactPlanDetails:
+        """Read plan details from path. Type of file identified by extension.
+
+        Parameters
+        ----------
+        path : str | os.PathLike
+            Path to the plan detail file.
+
+        Returns
+        -------
+        RadixactPlanDetails
+            The plan details as a DataFrame encapsulated with helper functions.
+
+        Raises
+        ------
+        ValueError
+            If the extension is not "csv", "parquet", or "xml".
+        """
+        if path.endswith(".csv"):
+            return cls.from_csv(path)
+        elif path.endswith(".parquet"):
+            return cls.from_parquet(path)
+        elif path.endswith(".xml"):
+            return cls.from_xml(path)
+        else:
+            raise ValueError(
+                f"Unsupported extension for RadixactPlanDetails: {path.split('.')[-1]}"
+            )
+
+    @classmethod
+    def from_parquet(cls, path: str | os.PathLike) -> RadixactPlanDetails:
+        """Read plan details from Parquet file.
+
+        Parameters
+        ----------
+        path : str | os.PathLike
+            Path to the plan detail Parquet file.
+
+        Returns
+        -------
+        RadixactPlanDetails
+            The plan details as a DataFrame encapsulated with helper functions.
+        """
+        return cls(pl.read_parquet(path))
+
+    @classmethod
+    def from_xml(cls, path: str | os.PathLike) -> RadixactPlanDetails:
+        """Read plan details from XML file.
+
+        Parameters
+        ----------
+        path : str | os.PathLike
+            Path to the plan detail XML file.
+
+        Returns
+        -------
+        RadixactPlanDetails
+            The plan details as a DataFrame encapsulated with helper functions.
         """
         details = {}
         tree = et.parse(path)
@@ -99,6 +161,30 @@ class RadixactPlanDetails:
 
     # endregion
 
+    # region Magic methods
+
+    def __len__(self) -> int:
+        """Returns number of plan details.
+
+        Returns
+        -------
+        int
+            Number of plan details.
+        """
+        return len(self._df)
+
+    def __repr__(self) -> str:
+        """Returns an unambigious string representation of the object.
+
+        Returns
+        -------
+        str
+            Representation of the object.
+        """
+        return self._df.__repr__()
+
+    # endregion
+
     # region Properties
 
     @property
@@ -111,6 +197,47 @@ class RadixactPlanDetails:
             DataFrame containing treatment plan details.
         """
         return self._df
+
+    # endregion
+
+    # region Public methods
+
+    def to_csv(self, path: str | os.PathLike) -> None:
+        """Writes plan details to CSV file.
+
+        Parameters
+        ----------
+        path : str | os.PathLike
+            Path for CSV file to be written.
+        """
+        self._df.write_csv(path)
+
+    def to_parquet(self, path: str | os.PathLike) -> None:
+        """Writes plan details to Parquet file.
+
+        Parameters
+        ----------
+        path : str | os.PathLike
+            Path for Parquet file to be written.
+        """
+        self._df.write_parquet(path)
+
+    def to_path(self, path: str | os.PathLike) -> None:
+        """Writes plan details to file. Type of file identified by extension.
+
+        Parameters
+        ----------
+        path : str | os.PathLike
+            Path for file to be written.
+        """
+        if path.endswith(".csv"):
+            self.to_csv(path)
+        elif path.endswith(".parquet"):
+            self.to_parquet(path)
+        else:
+            raise ValueError(
+                f"Unsupported extension for RadixactTiming: {path.split('.')[-1]}"
+            )
 
     # endregion
 

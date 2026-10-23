@@ -51,13 +51,12 @@ class RadixactSinogram:
         Parameters
         ----------
         path : str | os.PathLike
-            Path to the .bin file.
+            Path to the sinogram bin file.
 
         Returns
         -------
         RadixactSinogram
-            The csv file is returned as a two-dimensional numpy array encapsulated
-            with helper functions.
+            The sinogram as a DataFrame encapsulated with helper functions.
 
         Notes
         -----
@@ -91,35 +90,18 @@ class RadixactSinogram:
         return cls(df)
 
     @classmethod
-    def from_compressed(cls, path: str | os.PathLike) -> RadixactSinogram:
-        """Reads sinogram from a parquet file.
-
-        Parameters
-        ----------
-        path : str | os.PathLike
-            Path to the parquet file.
-
-        Returns
-        -------
-        RadixactSinogram
-            Two-dimensional numpy array encapsulated with helper functions.
-        """
-        return cls.from_parquet(path)
-
-    @classmethod
     def from_dcm(cls, path: str | os.PathLike) -> RadixactSinogram:
         """Reads planned sinogram from a DICOM RTPLAN file.
 
         Parameters
         ----------
         path : str | os.PathLike
-            Path to the .dcm file.
+            Path to the DICOM RTPLAN file.
 
         Returns
         -------
         RadixactSinogram
-            The DICOM RTPLAN file is returned as a two-dimensional numpy array
-            encapsulated with helper functions.
+            The sinogram as a DataFrame encapsulated with helper functions.
         """
         ds = pydicom.dcmread(path)
         if ds.Modality != "RTPLAN":
@@ -139,23 +121,22 @@ class RadixactSinogram:
                     }
                 )
         df = pl.DataFrame(data)
-        return RadixactSinogram(df)
+        return cls(df)
 
     @classmethod
     def from_delivery_analysis_csv(cls, path: str | os.PathLike) -> RadixactSinogram:
-        """Reads planned, telemetry, difference or detector sinogram from a .csv
+        """Reads planned, telemetry, difference or detector sinogram from a CSV
         file exported from the Delivery Analysis software.
 
         Parameters
         ----------
         path : str | os.PathLike
-            Path to the .csv file.
+            Path to the delivery analysis sinogram CSV file.
 
         Returns
         -------
         Sinogram
-            The csv file is returned as a two-dimensional numpy array encapsulated
-            with helper functions.
+            The sinogram as a DataFrame encapsulated with helper functions.
         """
         data = np.loadtxt(path, delimiter=",", skiprows=1)[:, 3:]
         if data.shape[1] == 640:
@@ -176,18 +157,17 @@ class RadixactSinogram:
 
     @classmethod
     def from_det(cls, path: str | os.PathLike) -> RadixactSinogram:
-        """Reads detector sinogram from a .det file.
+        """Reads detector sinogram from a detector file.
 
         Parameters
         ----------
         path : str | os.PathLike
-            Path to the .det file.
+            Path to the sinogram detector file.
 
         Returns
         -------
         RadixactSinogram
-            The det file is returned as a two-dimensional numpy array encapsulated
-            with helper functions.
+            The sinogram as a DataFrame encapsulated with helper functions.
 
         Notes
         -----
@@ -211,18 +191,17 @@ class RadixactSinogram:
 
     @classmethod
     def from_dplan(cls, path: str | os.PathLike) -> RadixactSinogram:
-        """Reads planned or telemetry sinogram from a .dplan file.
+        """Reads planned or telemetry sinogram from a dplan file.
 
         Parameters
         ----------
         path : str | os.PathLike
-            Path to the .dplan file.
+            Path to the sinogram dplan file.
 
         Returns
         -------
         RadixactSinogram
-            The dplan file is returned as a two-dimensional numpy array encapsulated
-            with helper functions, with timing data if dat file is specified.
+            The sinogram as a DataFrame encapsulated with helper functions.
 
         Notes
         -----
@@ -275,20 +254,57 @@ class RadixactSinogram:
 
     @classmethod
     def from_parquet(cls, path: str | os.PathLike) -> RadixactSinogram:
-        """Reads sinogram from a parquet file.
+        """Reads sinogram from a Parquet file.
 
         Parameters
         ----------
         path : str | os.PathLike
-            Path to the parquet file.
+            Path to the sinogram Parquet file.
 
         Returns
         -------
         RadixactSinogram
-            Two-dimensional numpy array encapsulated with helper functions.
+            The sinogram as a DataFrame encapsulated with helper functions.
         """
         df = pl.read_parquet(path)
         return cls(df)
+
+    @classmethod
+    def from_path(cls, path: str | os.PathLike) -> RadixactSinogram:
+        """Reads sinogram from a path. Type of file identified by extension.
+
+        Parameters
+        ----------
+        path : str | os.PathLike
+            Path to the sinogram file.
+
+        Returns
+        -------
+        RadixactSinogram
+            The sinogram as a DataFrame encapsulated with helper functions.
+
+        Raises
+        ------
+        ValueError
+            If the extension is not "bin", "csv", "dcm", "det", "dplan", or
+            "parquet".
+        """
+        if path.endswith(".bin"):
+            return cls.from_bin(path)
+        elif path.endswith(".csv"):
+            return cls.from_delivery_analysis_csv(path)
+        elif path.endswith(".dcm"):
+            return cls.from_dcm(path)
+        elif path.endswith(".det"):
+            return cls.from_det(path)
+        elif path.endswith(".dplan"):
+            return cls.from_dplan(path)
+        elif path.endswith(".parquet"):
+            return cls.from_parquet(path)
+        else:
+            raise ValueError(
+                f"Unsupported extension for RadixactSinogram: {path.split('.')[-1]}"
+            )
 
     # endregion
 
@@ -303,6 +319,16 @@ class RadixactSinogram:
             Number of projections.
         """
         return len(self._df)
+
+    def __repr__(self) -> str:
+        """Returns string representation of sinogram.
+
+        Returns
+        -------
+        str
+            String representation of sinogram.
+        """
+        return self._df.__repr__()
 
     # endregion
 
@@ -797,16 +823,6 @@ class RadixactSinogram:
             - self._df.get_column("time").to_numpy()[0]
         ) * 1000
 
-    def to_compressed(self, path: str | os.PathLike):
-        """Writes sinogram dataframe to parquet file.
-
-        Parameters
-        ----------
-        path : str | os.PathLike
-            Path of the parquet file to be written.
-        """
-        self.to_parquet(path)
-
     def to_csv(self, path: str | os.PathLike):
         """Writes sinogram leaf open times or channel signal data to CSV file.
 
@@ -867,14 +883,33 @@ class RadixactSinogram:
         ds.save_as(path)
 
     def to_parquet(self, path: str | os.PathLike) -> None:
-        """Writes sinogram dataframe to parquet file.
+        """Writes sinogram dataframe to Parquet file.
 
         Parameters
         ----------
         path : str | os.PathLike
-            Path of the parquet file to be written.
+            Path of the Parquet file to be written.
         """
         self._df.write_parquet(path)
+
+    def to_path(self, path: str | os.PathLike) -> None:
+        """Writes sinogram dataframe to file. Type of file identified by extension.
+
+        Parameters
+        ----------
+        path : str | os.PathLike
+            Path of the file to be written.
+        """
+        if path.endswith(".csv"):
+            self.to_csv(path)
+        elif path.endswith(".dcm"):
+            self.to_dcm(path)
+        elif path.endswith(".parquet"):
+            self.to_parquet(path)
+        else:
+            raise ValueError(
+                f"Unsupported extension for RadixactSinogram: {path.split('.')[-1]}"
+            )
 
     def upsample(self, frequency: int = 20) -> RadixactSinogram:
         """Upsamples sinogram to fractional projections.

@@ -42,7 +42,7 @@ logger = logging.getLogger(__name__)
 class RadixactDataset:
     # region Class variables
 
-    _COMPRESSED_EXTENSIONS: ClassVar[dict[str, str]] = {
+    _DEFAULT_COMPRESSED_EXTENSIONS: ClassVar[dict[str, str]] = {
         "Detector Sinogram": "parquet",
         "Motion Data": "npz",
         "Plan Sinogram": "parquet",
@@ -447,7 +447,7 @@ class RadixactDataset:
             for detector_sinogram_file in detector_sinogram_files:
                 logger.debug(f"Loading {detector_sinogram_file}")
                 detector_sinograms.append(
-                    RadixactSinogram.from_det(detector_sinogram_file)
+                    RadixactSinogram.from_path(detector_sinogram_file)
                 )
             logger.info(f"Loaded {len(detector_sinograms)} detector sinogram files")
             return detector_sinograms
@@ -499,7 +499,7 @@ class RadixactDataset:
         else:
             for motion_file in motion_files:
                 logger.debug(f"Loading {motion_file}")
-                motion = RadixactSynchronyMotion.from_xml(motion_file)
+                motion = RadixactSynchronyMotion.from_path(motion_file)
                 if motion is not None:
                     motions.append(motion)
             logger.info(f"Loaded {len(motions)} motion data files")
@@ -549,7 +549,7 @@ class RadixactDataset:
         else:
             for plan_detail_file in plan_detail_files:
                 logger.debug(f"Loading {plan_detail_file}")
-                plan_details.append(RadixactPlanDetails.from_xml(plan_detail_file))
+                plan_details.append(RadixactPlanDetails.from_path(plan_detail_file))
             logger.info(f"Loaded {len(plan_details)} plan detail files")
             return plan_details
 
@@ -624,7 +624,7 @@ class RadixactDataset:
         else:
             for plan_sinogram_file in plan_sinogram_files:
                 logger.debug(f"Loading {plan_sinogram_file}")
-                plan_sinograms.append(RadixactSinogram.from_dplan(plan_sinogram_file))
+                plan_sinograms.append(RadixactSinogram.from_path(plan_sinogram_file))
             logger.info(f"Loaded {len(plan_sinograms)} plan sinogram files")
             return plan_sinograms
 
@@ -722,7 +722,7 @@ class RadixactDataset:
         else:
             for telemetry_sinogram_file in telemetry_sinogram_files:
                 telemetry_sinograms.append(
-                    RadixactSinogram.from_dplan(telemetry_sinogram_file)
+                    RadixactSinogram.from_path(telemetry_sinogram_file)
                 )
             return telemetry_sinograms
 
@@ -743,7 +743,9 @@ class RadixactDataset:
             return telemetry_timings
         else:
             for telemetry_timing_file in telemetry_timing_files:
-                telemetry_timings.append(RadixactTiming.from_dat(telemetry_timing_file))
+                telemetry_timings.append(
+                    RadixactTiming.from_path(telemetry_timing_file)
+                )
             return telemetry_timings
 
     # endregion
@@ -1091,7 +1093,10 @@ class RadixactDataset:
         )
 
     def save_compressed(
-        self, path: str | os.PathLike, types: list[str] | None, overwrite: bool = True
+        self,
+        path: str | os.PathLike,
+        types: list[str] | None = None,
+        overwrite: bool = True,
     ) -> None:
         """Save compressed versions of dataset files in a directory.
 
@@ -1138,13 +1143,13 @@ class RadixactDataset:
                 dst_path = os.path.join(
                     path,
                     f"{self._DEFAULT_PREFIXES[type]}_{index + 1:03d}"
-                    + f".{self._COMPRESSED_EXTENSIONS_EXTENSIONS[type]}",
+                    + f".{self._DEFAULT_COMPRESSED_EXTENSIONS[type]}",
                 )
                 if os.path.exists(dst_path):
                     if overwrite:
-                        data.to_compressed(dst_path)
+                        data.to_path(dst_path)
                 else:
-                    data.to_compressed(dst_path)
+                    data.to_path(dst_path)
 
     def save_copy(
         self,
@@ -1167,6 +1172,7 @@ class RadixactDataset:
             Flag to silently overwrite existing files. Default is True. If False,
             file copy will be silently skipped.
         """
+        # TODO save "open" copies of data - i.e., CSV vs. dplan
         if types is None:
             types = [
                 "Detector Sinogram",
