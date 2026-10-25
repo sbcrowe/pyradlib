@@ -453,13 +453,7 @@ class RadixactSynchronyMotion:
         str
             Representation of the object.
         """
-        if "timestamp" in self._df:
-            return (
-                f"RadixactSynchronyMotion(len={len(self._df)}, "
-                f"timestamp={self._df['timestamp'][0]})"
-            )
-        else:
-            return f"RadixactSynchronyMotion(len={len(self._df)})"
+        return self._df.__repr__()
 
     # endregion
 
