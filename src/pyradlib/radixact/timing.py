@@ -124,6 +124,7 @@ class RadixactTiming:
         )
         return cls(data)
 
+    @classmethod
     def from_parquet(cls, path: str | os.PathLike) -> RadixactTiming:
         """Reads telemetry timing from a Parquet file.
 
@@ -140,6 +141,7 @@ class RadixactTiming:
         data = pl.read_parquet(path)
         return cls(data)
 
+    @classmethod
     def from_path(cls, path: str | os.PathLike) -> RadixactTiming:
         """Reads telemetry timing from a file, attempting to identify the file
         format by the path extension.
