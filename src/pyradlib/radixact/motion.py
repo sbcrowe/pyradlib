@@ -1411,6 +1411,9 @@ class RadixactSynchronyMotion:
                             "5pc_trimmed_range_" + col
                         ),
                         (pl.col(col).max() - pl.col(col).min()).alias("range_" + col),
+                        (pl.col(col).abs().quantile(0.95)).alias(
+                            "95th_percentile_absolute_" + col
+                        ),
                         pl.col("delta_" + col).mean().alias("mean_delta_" + col),
                         pl.col("delta_" + col).median().alias("median_delta_" + col),
                     ]
